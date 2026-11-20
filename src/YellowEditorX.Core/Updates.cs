@@ -6,11 +6,11 @@ namespace YellowEditorX.Core;
 public sealed record UpdateInfo(Version Version, string Notes, string ZipUrl);
 
 /// <summary>
-/// New versions are GitHub releases of YellowGrow/YellowEditorX: tag "v1.2.0" with the published folder as a zip.
+/// New versions are GitHub releases of pendulums58/WXEditorX: tag "v1.2.0" with the published folder as a zip.
 /// </summary>
 public static class Updates
 {
-    public const string Repository = "YellowGrow/YellowEditorX";
+    public const string Repository = "pendulums58/WXEditorX";
     public const string LatestUrl = "https://api.github.com/repos/" + Repository + "/releases/latest";
 
     /// <summary>Files of the user that an update never replaces.</summary>
