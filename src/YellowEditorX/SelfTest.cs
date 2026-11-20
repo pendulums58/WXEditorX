@@ -130,6 +130,11 @@ public partial class MainWindow
         model.LifeBurst = true;
         model.LbText = "카드를 1장 뽑는다.";
         model.Ability = "【常】：이 시그니의 파워는 +1000된다.";
+        foreach (var label in new[] { "赤", "無" })
+            Press(Children<Button>(SymbolBar).First(b => ((SymbolButton)b.DataContext).Label == label));
+        T(model.Ability.EndsWith("《赤》《無》") && DescBox.IsKeyboardFocused, "symbol buttons add to the end of the ability text");
+        model.Ability = model.Ability.Replace("《赤》《無》", "");
+        FormatKeyBox.IsChecked = true;
         model.Prints[0].CardNo = "TEST-001";
         model.Prints[0].Rarity = "SR";
         await Idle();
@@ -144,7 +149,7 @@ public partial class MainWindow
         T(saved.Ko.Name == "테스트 시그니" && saved.Ja.IsEmpty && saved.Source == Card.Orica && saved.Kind.SequenceEqual(new[] { "シグニ" })
           && saved.Color == (Card.Red | Card.Blue) && saved.Level == 3 && saved.Power == 8000 && saved.Limit == null
           && saved.Class.SequenceEqual(new[] { "精武：アーム", "精武：ウェポン" }) && saved.LifeBurst && saved.Ko.LifeBurst == "카드를 1장 뽑는다."
-          && saved.Prints.Count == 1 && saved.Prints[0].CardNo == "TEST-001" && saved.Prints[0].Rarity == "SR"
+          && saved.Prints.Count == 1 && saved.Prints[0].CardNo == "TEST-001" && saved.Prints[0].Rarity == "SR" && saved.Prints[0].Formats == Card.FormatKey
           && saved.Maker == "시안" && saved.Created == today && saved.Modified == today,
           "new card read back field by field");
         T(!model.IsDirty && currentRow?.Card.Id == 1000001, "saved card is the current row");
@@ -163,6 +168,7 @@ public partial class MainWindow
         T(SaveCurrent() && CardDb.Read(pack, 1000001)!.Prints.Select(p => p.Idx).SequenceEqual(new[] { 1, 2 }), "two prints saved");
         model.MovePrint(model.Prints[1], -1);
         T(model.Prints[0].CardNo == "TEST-001P" && model.Prints[0].Idx == 1 && model.Prints[1].Idx == 2, "moving a print renumbers idx");
+        T(model.Prints.All(p => p.Formats == Card.FormatKey), "the added print has the card's formats");
         model.Load(CardDb.Read(pack, 1000001));
 
         // 6. checks before saving

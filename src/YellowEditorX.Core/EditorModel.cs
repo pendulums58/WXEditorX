@@ -44,15 +44,17 @@ public sealed class PrintRow : Notifier
 {
     readonly Action changed;
     int idx;
-    string cardNo = "", setCode = "", rarity = "", illustrator = "", image = "", formats = "";
+    string cardNo = "", setCode = "", rarity = "", illustrator = "", image = "";
     /// <summary>The name as printed on the official card; not edited, kept as it was.</summary>
     public string RawName = "";
+    /// <summary>Format bits of this print. Edited for the whole card (see <see cref="EditorModel.FormatKey"/>).</summary>
+    public long? Formats;
 
     public PrintRow(CardPrint p, Action changed)
     {
         this.changed = changed;
         idx = p.Idx; cardNo = p.CardNo; setCode = p.SetCode; rarity = p.Rarity; illustrator = p.Illustrator; image = p.Image;
-        formats = p.Formats?.ToString() ?? "";
+        Formats = p.Formats;
         RawName = p.RawName;
     }
 
@@ -64,12 +66,11 @@ public sealed class PrintRow : Notifier
     public string Illustrator { get => illustrator; set => S(ref illustrator, value); }
     /// <summary>The official image URL; empty for an orica (its picture is pics\&lt;cid&gt;.png).</summary>
     public string Image { get => image; set => S(ref image, value); }
-    public string Formats { get => formats; set => S(ref formats, value); }
 
     public CardPrint ToPrint() => new()
     {
         Idx = idx, CardNo = cardNo.Trim(), SetCode = setCode.Trim(), Rarity = rarity.Trim(), Illustrator = illustrator.Trim(),
-        Image = image.Trim(), RawName = RawName, Formats = long.TryParse(formats.Trim(), out long f) ? f : null,
+        Image = image.Trim(), RawName = RawName, Formats = Formats,
     };
 }
 
@@ -113,7 +114,7 @@ public sealed class EditorModel : Notifier
         foreach (var (bit, text) in Card.Colors) Colors.Add(new FlagOption(bit, text, OnColorChanged));
         Colors.Add(new FlagOption(Colorless, "無", OnColorChanged));
         foreach (var t in lists.Timing) AddChip(Timings, t, _ => OnChanged());
-        Prints.CollectionChanged += (_, _) => { Renumber(); OnChanged(); };
+        Prints.CollectionChanged += (_, _) => { Renumber(); RaiseFormats(); OnChanged(); };
         Load(null);
     }
 
@@ -150,6 +151,31 @@ public sealed class EditorModel : Notifier
     public string Modified { get => modified; set => S(ref modified, value); }
     public bool Guard { get => guard; set { if (Set(ref guard, value)) OnChanged(); } }
     public bool LifeBurst { get => lifeBurst; set { if (Set(ref lifeBurst, value)) OnChanged(); } }
+
+    // A card can be played in a format when any of its prints is marked for it, so the formats are shown
+    // for the whole card; changing one sets it on every print.
+    long CardFormats => Prints.Aggregate(0L, (f, p) => f | (p.Formats ?? 0));
+    public bool FormatKey { get => (CardFormats & Card.FormatKey) != 0; set => SetFormat(Card.FormatKey, value); }
+    public bool FormatDiva { get => (CardFormats & Card.FormatDiva) != 0; set => SetFormat(Card.FormatDiva, value); }
+
+    void SetFormat(long bit, bool on)
+    {
+        long f = on ? CardFormats | bit : CardFormats & ~bit;
+        foreach (var p in Prints) p.Formats = f;
+        RaiseFormats();
+        OnChanged();
+    }
+
+    void RaiseFormats()
+    {
+        Raise(nameof(FormatKey));
+        Raise(nameof(FormatDiva));
+    }
+
+    /// <summary>Signi classes and lrig types share the class column; the kind says which one it is.</summary>
+    bool IsLrig => Kinds.Any(k => k.IsChecked && CardLists.LrigKinds.Contains(k.Text));
+    public string ClassLabel => IsLrig ? "루리그 타입" : "클래스";
+    public List<string> ClassChoices => IsLrig ? Lists.LrigType : Lists.Class;
 
     public bool IsOfficial => source == Card.Official;
     public string SourceText => IsOfficial ? "공식" : "오리카";
@@ -216,6 +242,8 @@ public sealed class EditorModel : Notifier
     void OnKindChanged(FlagOption _)
     {
         foreach (var n in ShowNames) Raise(n);
+        Raise(nameof(ClassLabel));
+        Raise(nameof(ClassChoices));
         OnChanged();
     }
 
@@ -266,7 +294,8 @@ public sealed class EditorModel : Notifier
         SelectedPrint = Prints.FirstOrDefault();
 
         foreach (var n in new[] { nameof(IsOfficial), nameof(SourceText), nameof(HasJa), nameof(JaName), nameof(JaReading),
-                                  nameof(JaAbility), nameof(JaLbText), nameof(JaFlavor) }.Concat(ShowNames))
+                                  nameof(JaAbility), nameof(JaLbText), nameof(JaFlavor), nameof(ClassLabel), nameof(ClassChoices),
+                                  nameof(FormatKey), nameof(FormatDiva) }.Concat(ShowNames))
             Raise(n);
         loading = false;
         baseline = ToCard();
@@ -295,6 +324,9 @@ public sealed class EditorModel : Notifier
         s.Split(new[] { ',', '、' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
 
     /// <summary>Adds a choice from the drop-down to a list field ("Classes", "LimitCond" or "Team").</summary>
+    /// <summary>A symbol button: the icon code (《白》 and so on) goes at the end of the ability text.</summary>
+    public void AppendSymbol(string code) => Ability += code;
+
     public void Append(string field, string value)
     {
         value = value.Trim();
@@ -312,7 +344,7 @@ public sealed class EditorModel : Notifier
     public PrintRow AddPrint()
     {
         var first = Prints.FirstOrDefault();
-        var row = new PrintRow(new CardPrint { Idx = Prints.Count + 1, SetCode = first?.SetCode ?? "" }, OnChanged);
+        var row = new PrintRow(new CardPrint { Idx = Prints.Count + 1, SetCode = first?.SetCode ?? "", Formats = CardFormats }, OnChanged);
         Prints.Add(row);
         SelectedPrint = row;
         return row;

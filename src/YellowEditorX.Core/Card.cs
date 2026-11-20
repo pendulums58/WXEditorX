@@ -33,6 +33,8 @@ public sealed class Card
     public const string Official = "official", Orica = "orica";
     /// <summary>Color bits. 0 = 무색, null = no color at all.</summary>
     public const int White = 1, Red = 2, Blue = 4, Green = 8, Black = 16;
+    /// <summary>prints.formats bits (build_db.py). All-star needs no bit: every card can be played there.</summary>
+    public const long FormatKey = 1, FormatDiva = 2;
     /// <summary>Level, limit and power use this for ∞.</summary>
     public const long Infinite = -1;
 

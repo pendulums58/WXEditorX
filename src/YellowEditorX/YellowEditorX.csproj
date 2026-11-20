@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <None Include="data\lists.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="data\symbols.json" CopyToOutputDirectory="PreserveNewest" />
     <Resource Include="app.ico" />
   </ItemGroup>
 

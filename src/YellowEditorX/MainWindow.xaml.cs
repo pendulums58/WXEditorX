@@ -67,12 +67,15 @@ public partial class MainWindow : Window
     }
 
     #region startup and settings
+    /// <summary>data\lists.json (choices) and data\symbols.json (the symbol buttons over the ability text).</summary>
     bool LoadLists()
     {
         string p = Path.Combine(AppContext.BaseDirectory, "data", "lists.json");
         try
         {
             lists = CardLists.Load(p);
+            p = Path.Combine(AppContext.BaseDirectory, "data", "symbols.json");
+            SymbolBar.ItemsSource = CardLists.LoadSymbols(p);
             return true;
         }
         catch (Exception ex)
@@ -911,6 +914,14 @@ public partial class MainWindow : Window
         cb.SelectedItem = null;
         cb.Text = "";
         e.Handled = true;
+    }
+
+    void Symbol_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not SymbolButton s) return;
+        model.AppendSymbol(s.Code);
+        DescBox.Focus();
+        DescBox.CaretIndex = DescBox.Text.Length;
     }
 
     void AddPrint_Click(object sender, RoutedEventArgs e) => model.AddPrint();

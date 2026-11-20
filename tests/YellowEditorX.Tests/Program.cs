@@ -10,8 +10,8 @@ void Check(bool ok, string what)
 
 var lists = CardLists.Load(args[0]);
 string official = args[1];
-Console.WriteLine($"lists: {lists.Kind.Count} kinds, {lists.Class.Count} classes, {lists.LimitCond.Count} limit conditions, {lists.Team.Count} teams, {lists.Timing.Count} timings");
-Check(lists.Kind.Contains("シグニ") && lists.Class.Count > 100 && lists.Timing.Count == 3, "list counts");
+Console.WriteLine($"lists: {lists.Kind.Count} kinds, {lists.Class.Count} classes, {lists.LrigType.Count} lrig types, {lists.LimitCond.Count} limit conditions, {lists.Team.Count} teams, {lists.Timing.Count} timings");
+Check(lists.Kind.Contains("シグニ") && lists.Class.Count > 50 && lists.LrigType.Count > 50 && lists.Timing.Count == 3, "list counts");
 
 string tmp = Path.Combine(Path.GetTempPath(), "wxe_test");
 if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
@@ -103,6 +103,33 @@ model.Kinds.Single(k => k.Text == "アーツ").IsChecked = true;
 Check(!model.ShowPower && model.ShowTiming && model.ShowCost, "アーツ fields");
 model.Kinds.Single(k => k.Text == "アーツ").IsChecked = false;
 Check(model.ShowPower && model.ShowLimit, "no kind: every field");
+
+// 4b. formats: the card shows what any print has; changing it sets every print
+var mixed = all.First(c => c.Prints.Select(p => p.Formats).Distinct().Count() > 1);
+model.Load(mixed);
+long anyFormat = mixed.Prints.Aggregate(0L, (f, p) => f | (p.Formats ?? 0));
+Check(model.FormatKey == ((anyFormat & Card.FormatKey) != 0) && model.FormatDiva == ((anyFormat & Card.FormatDiva) != 0) && !model.IsDirty,
+      $"formats of {mixed.Id}: any print counts, nothing changes on load");
+model.FormatDiva = !model.FormatDiva;
+Check(model.IsDirty && model.ToCard().Prints.Select(p => p.Formats).Distinct().Count() == 1, "a changed format goes to every print");
+model.Load(new Card { Id = 1, Prints = { new CardPrint { Idx = 1, Formats = 3 } } });
+Check(model.AddPrint().Formats == 3, "a new print gets the card's formats");
+
+// 4c. the class column: signi classes or lrig types, by kind
+Check(lists.Class.Contains("精武：アーム") && !lists.Class.Contains("タマ") && lists.LrigType.Contains("タマ"), "class and lrig type lists apart");
+model.Load(new Card { Id = 1, Kind = { "シグニ" } });
+Check(model.ClassLabel == "클래스" && model.ClassChoices == lists.Class, "signi: 클래스");
+model.Kinds.Single(k => k.Text == "シグニ").IsChecked = false;
+model.Kinds.Single(k => k.Text == "アシストルリグ").IsChecked = true;
+Check(model.ClassLabel == "루리그 타입" && model.ClassChoices == lists.LrigType, "assist lrig: 루리그 타입");
+
+// 4d. symbol buttons
+var symbols = CardLists.LoadSymbols(Path.Combine(Path.GetDirectoryName(args[0])!, "symbols.json"));
+Check(symbols.Select(s => s.Code).SequenceEqual(new[] { "《白》", "《赤》", "《青》", "《緑》", "《黒》", "《無》" }) && symbols.All(s => s.Label.Length > 0),
+      "symbols.json: " + string.Join(" ", symbols.Select(s => s.Label)));
+model.Ability = "【起】";
+model.AppendSymbol("《白》");
+Check(model.Ability == "【起】《白》", "symbol added at the end");
 
 // 5. dates of an orica
 model.Load(new Card { Id = 5, Source = Card.Orica, Created = "2026-01-01", Modified = "2026-01-02" });

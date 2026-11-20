@@ -208,6 +208,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.Resources>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource Label}"/>
@@ -289,9 +290,9 @@
                                 </StackPanel>
                             </WrapPanel>
 
-                            <TextBlock Grid.Row="5" Text="클래스" Visibility="{Binding ShowClass, Converter={StaticResource Vis}}"/>
+                            <TextBlock Grid.Row="5" Text="{Binding ClassLabel}" Visibility="{Binding ShowClass, Converter={StaticResource Vis}}"/>
                             <DockPanel Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Visibility="{Binding ShowClass, Converter={StaticResource Vis}}">
-                                <ComboBox DockPanel.Dock="Right" Width="170" Margin="6,0,0,0" Tag="Classes" ItemsSource="{Binding Lists.Class}"
+                                <ComboBox DockPanel.Dock="Right" Width="170" Margin="6,0,0,0" Tag="Classes" ItemsSource="{Binding ClassChoices}"
                                           IsEditable="True" DropDownClosed="ListPick_DropDownClosed" PreviewKeyDown="ListPick_PreviewKeyDown"
                                           ToolTip="골라서 추가 (직접 쓰고 Enter도 돼요)"/>
                                 <TextBox Text="{Binding Classes, UpdateSourceTrigger=PropertyChanged}" ToolTip="시그니 클래스 / 루리그 타입. 여러 개는 쉼표로 구분"/>
@@ -332,12 +333,21 @@
                                           Visibility="{Binding ShowLifeBurst, Converter={StaticResource Vis}}"/>
                             </WrapPanel>
 
-                            <TextBlock Grid.Row="9" Text="읽는 법"/>
-                            <TextBox Grid.Row="9" Grid.Column="1" Margin="0,0,10,8" Text="{Binding Reading, UpdateSourceTrigger=PropertyChanged}" ToolTip="한국어 이름 읽는 법 (검색용, 비워 둬도 돼요)"/>
+                            <!-- formats are kept on every print; the card can be played where any print can -->
+                            <TextBlock Grid.Row="9" Text="포맷"/>
+                            <StackPanel Grid.Row="9" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,10"
+                                        ToolTip="올스타는 모든 카드가 써요. 바꾸면 모든 인쇄본에 같이 들어가요">
+                                <TextBlock Text="올스타" Foreground="{StaticResource Muted}" Margin="0,0,14,0"/>
+                                <CheckBox x:Name="FormatKeyBox" Content="키 셀렉션" IsChecked="{Binding FormatKey}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                <CheckBox x:Name="FormatDivaBox" Content="디바 셀렉션" IsChecked="{Binding FormatDiva}" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="10" Text="읽는 법"/>
+                            <TextBox Grid.Row="10" Grid.Column="1" Margin="0,0,10,8" Text="{Binding Reading, UpdateSourceTrigger=PropertyChanged}" ToolTip="한국어 이름 읽는 법 (검색용, 비워 둬도 돼요)"/>
 
                             <!-- 제작 정보: the card_meta table -->
-                            <TextBlock Grid.Row="10" Text="제작 정보" VerticalAlignment="Top" Margin="0,5,8,0"/>
-                            <Grid x:Name="MetaFields" Grid.Row="10" Grid.Column="1" Margin="0,4,10,0">
+                            <TextBlock Grid.Row="11" Text="제작 정보" VerticalAlignment="Top" Margin="0,5,8,0"/>
+                            <Grid x:Name="MetaFields" Grid.Row="11" Grid.Column="1" Margin="0,4,10,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
@@ -380,7 +390,23 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <DockPanel>
-                            <TextBlock x:Name="DescCount" DockPanel.Dock="Right" Foreground="{StaticResource Muted}"/>
+                            <TextBlock x:Name="DescCount" DockPanel.Dock="Right" Foreground="{StaticResource Muted}" Margin="10,0,0,0"/>
+                            <!-- symbol buttons from data\symbols.json -->
+                            <ItemsControl x:Name="SymbolBar" DockPanel.Dock="Right" VerticalAlignment="Top">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource Small}" Content="{Binding Label}" Margin="3,0,0,0" MinWidth="28"
+                                                Click="Symbol_Click" Focusable="False">
+                                            <Button.ToolTip>
+                                                <TextBlock><Run Text="{Binding Tip, Mode=OneWay}"/> — 능력 텍스트 끝에 <Run Text="{Binding Code, Mode=OneWay}"/> 넣기</TextBlock>
+                                            </Button.ToolTip>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <TextBlock Text="능력 텍스트" Style="{StaticResource Heading}"/>
                         </DockPanel>
                         <TextBox x:Name="DescBox" Grid.Row="1" Text="{Binding Ability, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" AcceptsTab="False"
@@ -430,7 +456,6 @@
                                 <DataGridTextColumn Header="세트" Binding="{Binding SetCode, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
                                 <DataGridTextColumn Header="레어도" Binding="{Binding Rarity, UpdateSourceTrigger=PropertyChanged}" Width="52"/>
                                 <DataGridTextColumn Header="일러스트" Binding="{Binding Illustrator, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
-                                <DataGridTextColumn Header="포맷" Binding="{Binding Formats, UpdateSourceTrigger=PropertyChanged}" Width="40"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </DockPanel>
