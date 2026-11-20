@@ -22,8 +22,6 @@ public sealed class Settings
     public string? ScriptEditor { get; set; }
     /// <summary>제작자 of the last saved card, filled into new cards.</summary>
     public string? LastMaker { get; set; }
-    /// <summary>Read new card groups, races and attributes from the CyanPro GitHub repositories at start.</summary>
-    public bool GitHubSync { get; set; } = true;
     /// <summary>Look for a new YellowEditorX release at start.</summary>
     public bool UpdateCheck { get; set; } = true;
     /// <summary>A version the user chose to skip.</summary>

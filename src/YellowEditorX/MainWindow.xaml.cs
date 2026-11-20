@@ -47,7 +47,6 @@ public partial class MainWindow : Window
         if (testSettings != null) testAnswers = new();
         InitializeComponent();
         if (!LoadCardInfo()) return;
-        ApplyRemote(ReadRemoteCache(), live: false);
         Ready = true;
         model = new EditorModel(info);
         DataContext = model;
@@ -91,108 +90,13 @@ public partial class MainWindow : Window
         return false;
     }
 
-    #region card groups, types, races and attributes from GitHub
-    // The last files read from GitHub, so the lists are the same at the next start even without internet.
-    static string RemoteCacheDir => Path.Combine(AppContext.BaseDirectory, "data", "github");
-    const string StringsCacheName = "strings.conf", ConstantsCacheName = "ocgapi_constants.h", DataManagerCacheName = "data_manager.cpp";
-
-    (string? Strings, string? Constants, string? DataManager) ReadRemoteCache()
-    {
-        string? Read(string name)
-        {
-            try { return File.ReadAllText(Path.Combine(RemoteCacheDir, name)); } catch { return null; }
-        }
-        return settings.GitHubSync ? (Read(StringsCacheName), Read(ConstantsCacheName), Read(DataManagerCacheName)) : (null, null, null);
-    }
-
-    /// <summary>
-    /// Makes the lists the same as CyanPro's. Before the model exists it changes the card info, afterwards the
-    /// model's lists. The type check boxes are made once, so a changed type list shows from the next start.
-    /// </summary>
-    int ApplyRemote((string? Strings, string? Constants, string? DataManager) remote, bool live) =>
-        ApplyRemote(remote, live, out _);
-
-    int ApplyRemote((string? Strings, string? Constants, string? DataManager) remote, bool live, out bool typesChanged)
-    {
-        IList<InfoItem> setnames = live ? model.SetnameItems : info.Setnames;
-        IList<InfoItem> races = live ? model.Races : info.Races;
-        IList<InfoItem> attributes = live ? model.Attributes : info.Attributes;
-        long[] keepRace = live ? new[] { model.Race } : Array.Empty<long>();
-        long[] keepAttribute = live ? new[] { model.Attribute } : Array.Empty<long>();
-        int n = 0;
-        typesChanged = false;
-        if (remote.Strings != null)
-            n += RemoteInfo.Sync(setnames, RemoteInfo.ParseSetnames(remote.Strings), live ? model.Setcodes.Select(s => s.Value).ToArray() : Array.Empty<long>());
-        if (remote.Constants != null)
-        {
-            n += RemoteInfo.Sync(races, RemoteInfo.ParseBits(remote.Constants, "RACE", remote.Strings, null, info.Races), keepRace);
-            n += RemoteInfo.Sync(attributes, RemoteInfo.ParseBits(remote.Constants, "ATTRIBUTE", remote.Strings, null, info.Attributes), keepAttribute);
-            var types = RemoteInfo.ParseBits(remote.Constants, "TYPE", remote.Strings, remote.DataManager, info.Types);
-            if (live)
-            {
-                // Only compared here: the check boxes are built from info.Types when the window opens.
-                var copy = info.Types.ToList();
-                typesChanged = RemoteInfo.Sync(copy, types) > 0;
-            }
-            else n += RemoteInfo.Sync(info.Types, types);
-        }
-        if (live && n > 0)
-        {
-            model.RefreshSetnames();
-            model.RefreshChoices();
-        }
-        return n;
-    }
-
-    static readonly System.Net.Http.HttpClient http = new() { Timeout = TimeSpan.FromSeconds(10) };
-
-    /// <summary>Reads the lists from GitHub in the background and adds anything new.</summary>
-    async Task SyncRemote(bool manual)
-    {
-        if (!settings.GitHubSync && !manual) return;
-        if (manual) ShowStatus("GitHub에서 카드군·종류·종족·속성 목록을 받는 중…");
-        string strings, constants, dataManager;
-        try
-        {
-            var s = http.GetStringAsync(RemoteInfo.StringsUrl);
-            var c = http.GetStringAsync(RemoteInfo.ConstantsUrl);
-            var d = http.GetStringAsync(RemoteInfo.DataManagerUrl);
-            strings = await s;
-            constants = await c;
-            dataManager = await d;
-        }
-        catch (Exception ex)
-        {
-            if (manual) ShowStatus("GitHub에 연결하지 못했어요. 저장해 둔 목록을 그대로 써요. (" + ex.Message + ")");
-            return;
-        }
-        if (!settings.ReadOnly)
-        {
-            try
-            {
-                Directory.CreateDirectory(RemoteCacheDir);
-                File.WriteAllText(Path.Combine(RemoteCacheDir, StringsCacheName), strings);
-                File.WriteAllText(Path.Combine(RemoteCacheDir, ConstantsCacheName), constants);
-                File.WriteAllText(Path.Combine(RemoteCacheDir, DataManagerCacheName), dataManager);
-            }
-            catch { }
-        }
-        int n = ApplyRemote((strings, constants, dataManager), live: true, out bool typesChanged);
-        string types = typesChanged ? " 몬스터·마법·함정 종류도 바뀌었어요. 에디터를 다시 켜면 보여요." : "";
-        if (n > 0) ShowStatus($"GitHub(CyanPro) 목록에 맞췄어요 — 추가·변경·삭제된 항목 {n}개.{types}");
-        else if (typesChanged) ShowStatus("GitHub(CyanPro) 목록을 받았어요." + types);
-        else if (manual) ShowStatus("GitHub 목록과 같아요. 바뀐 게 없어요.");
-    }
-
-    async void SyncRemote_Click(object sender, RoutedEventArgs e) => await SyncRemote(manual: true);
-    #endregion
-
     #region updates
     // A new version is a GitHub release; the download and the updater script go to a temp folder.
     static string UpdateDir => Path.Combine(Path.GetTempPath(), "YellowEditorX_update");
     static string UpdateLog => Path.Combine(UpdateDir, "update.log");
     static Version CurrentVersion => Updates.Normalize(typeof(MainWindow).Assembly.GetName().Version ?? new Version(0, 0));
     static string Short(Version v) => v.Revision > 0 ? v.ToString() : v.ToString(3);
+    static readonly System.Net.Http.HttpClient http = new() { Timeout = TimeSpan.FromSeconds(10) };
     static readonly System.Net.Http.HttpClient download = new() { Timeout = TimeSpan.FromMinutes(5) };
     bool closingForUpdate;
 
@@ -305,7 +209,6 @@ public partial class MainWindow : Window
 
     void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        _ = SyncRemote(manual: false);
         // No dialog at startup: the list just stays empty until a file is opened.
         if (settings.OpenDbs.Count == 0) ShowStatus("왼쪽 위 [열기]로 cdb 파일을 여세요. 여러 개를 한 번에 고를 수 있어요.");
         RefreshDbList(settings.LastDb);

@@ -30,7 +30,6 @@ if ($LASTEXITCODE -ne 0) { throw "빌드 실패" }
 
 # 3. zip (개인 설정은 넣지 않음)
 Get-ChildItem $out -Recurse -Include settings.json, *.bak | Remove-Item -Force -ErrorAction Stop
-if (Test-Path (Join-Path $out 'data\github')) { Remove-Item (Join-Path $out 'data\github') -Recurse -Force -ErrorAction Stop }
 $zip = Join-Path $PSScriptRoot "release\YellowEditorX-$Version.zip"
 Compress-Archive -Path $out -DestinationPath $zip -ErrorAction Stop
 

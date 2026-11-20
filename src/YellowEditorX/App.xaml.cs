@@ -15,7 +15,6 @@ public partial class App : Application
             {
                 OpenDbs = YellowEditorX.Core.Workspace.Scan(e.Args[1]).Select(d => d.Path).ToList(),
                 ReadOnly = true,
-                GitHubSync = false,
                 UpdateCheck = false,
             });
             if (!w.Ready) { Shutdown(1); return; }

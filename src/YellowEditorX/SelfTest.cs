@@ -438,26 +438,6 @@ public partial class MainWindow
         await Idle();
         FilterBox.Text = "";
 
-        // 14c. card groups, races and attributes follow CyanPro while running; what the card on screen uses stays
-        long shownRace = model.Race, shownAttribute = model.Attribute;
-        bool dirtyBefore = model.IsDirty;
-        string fakeStrings = "#setnames\n!setname 0x9f01\t테스트 카드군\n!setname 0x300\t마칭 파이어\n";
-        string fakeHeader = "#define RACE_WARRIOR 0x1\n#define RACE_NEWKIND 0x100000000\n#define RACE_ALL (RACE_WARRIOR)\n#define ATTRIBUTE_EARTH 0x01\n"
-                          + "#define TYPE_MONSTER 0x1\n#define TYPE_NEWKIND 0x80000000\n";
-        int changed = ApplyRemote((fakeStrings, fakeHeader, null), live: true, out bool typesChanged);
-        await Idle();
-        T(model.IsDirty == dirtyBefore, "syncing doesn't make the card unsaved");
-        model.Setcodes[3].Hex = "9f01";
-        T(changed >= 2 && model.SetnameItems.Any(s => s.Text == "테스트 카드군") && model.Setcodes[3].Selected?.Text == "테스트 카드군"
-          && model.Races.Any(r => r.Value == 0x100000000 && r.Text == "RACE_NEWKIND"), $"GitHub lists synced live ({changed})");
-        T(model.SetnameItems.All(s => s.Value <= 0 || s.Value is 0x9f01 or 0x300 || model.Setcodes.Any(c => c.Value == s.Value))
-          && model.Races.All(r => r.Value is 0 or 0x1 or 0x100000000 || r.Value == shownRace)
-          && model.Attributes.All(a => a.Value is 0 or 0x1 || a.Value == shownAttribute), "values CyanPro doesn't have are taken out");
-        T(model.Race == shownRace && model.Attribute == shownAttribute
-          && model.Races.Any(r => r.Value == shownRace), "the card on screen keeps its race and attribute");
-        T(typesChanged, "a changed type list is noticed");
-        T(ApplyRemote((fakeStrings, fakeHeader, null), live: true) == 0, "same list again changes nothing");
-
         // 14d. after a restart by the updater: a good update refreshes the Windows icons, a failed one says so
         string? oldLog = File.Exists(UpdateLog) ? File.ReadAllText(UpdateLog) : null;
         Directory.CreateDirectory(UpdateDir);

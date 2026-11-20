@@ -284,42 +284,6 @@ Check(model.ToSaveCard(new DateTime(2026, 10, 30)).Ot == 0x20, "rule is 0x20");
     Check(CardDb.Read(ddb, 4)?.Created == "2026-10-02" && RawRows(ddb, CardDb.DatesTable).Count == 1, "dates follow code change");
 }
 
-// 7c. card groups / races / attributes from the CyanPro GitHub files
-{
-    var sn = RemoteInfo.ParseSetnames("#setnames\n!setname 0x300\t마칭 파이어\n!setname 0x305 벨루티나\r\n!counter 0x91 스피드 카운터\n!system 1093 기프트\n");
-    Check(sn.Count == 2 && sn[0] == new InfoItem(0x300, "마칭 파이어") && sn[1] == new InfoItem(0x305, "벨루티나"), "setnames parsed");
-    var races = RemoteInfo.ParseBits("#define RACE_WARRIOR      0x1\n#define RACE_YOKAI             0x4000000000000000\n#define RACE_MAX               RACE_GALAXY\n#define RACE_ALL (RACE_WARRIOR)\n#define RACE_X 0x3\n#define ATTRIBUTE_DARK   0x20\n", "RACE");
-    // A freed bit (요괴족 is gone from CyanPro) gets no old name: only what strings.conf or the define says.
-    Check(races.Count == 2 && races[0].Text == "전사족" && races[1] == new InfoItem(0x4000000000000000, "RACE_YOKAI"), "races parsed (single bits only)");
-    var list = new List<InfoItem> { new(-1, "(정의되지 않음)"), new(0, ""), new(0x300, "옛 이름"), new(0xef3, "결연희"), new(0xef4, "쓰는 중") };
-    Check(RemoteInfo.Sync(list, sn, 0xef4) == 3 && list.Select(i => i.Text).SequenceEqual(new[] { "(정의되지 않음)", "", "마칭 파이어", "쓰는 중", "벨루티나" }),
-          "setnames synced: renamed, added, removed unless in use: " + string.Join(",", list.Select(i => i.Text)));
-    var rl = new List<InfoItem> { new(0, "(종족)"), new(0x1, "전사"), new(0x2, "마법사족") };
-    Check(RemoteInfo.Sync(rl, races) == 3 && rl.Select(i => i.Value).SequenceEqual(new[] { 0L, 0x1, 0x4000000000000000 }) && rl[1].Text == "전사족",
-          "races synced to CyanPro");
-    Check(RemoteInfo.Sync(rl, new List<InfoItem>()) == 0 && rl.Count == 3, "an empty remote list changes nothing");
-    // Type names: orica types through the data_manager table, others by bit position, cardinfo name as fallback.
-    string th = "#define TYPE_MONSTER 0x1\n#define TYPE_TRAPMONSTER 0x100\n#define TYPE_UNLOCKED 0x00008000\n#define TYPE_ACCESS   0x08000000\n#define TYPE_NEWKIND 0x80000000\n";
-    var types = RemoteInfo.ParseBits(th, "TYPE", "!system 1090 액세스X\n!system 1050 몬스터M\n", "{TYPE_ACCESS,  1090},", new[] { new InfoItem(0x80000000, "새 종류 ") });
-    Check(types.Select(t => t.Text).SequenceEqual(new[] { "몬스터M", "키-해금됨", "액세스X", "새 종류" }), "types named: " + string.Join(",", types.Select(t => t.Text)));
-    var unnamed = RemoteInfo.ParseBits(th, "TYPE");
-    Check(unnamed[^1].Text == "TYPE_NEWKIND", "type with no name anywhere shows its define");
-    // optional: the real files downloaded next to the cdb copies
-    string realStrings = Path.Combine(cdbRoot, "..", "strings.conf"), realHeader = Path.Combine(cdbRoot, "..", "ocgapi_constants.h");
-    string realDm = Path.Combine(cdbRoot, "..", "data_manager.cpp");
-    if (File.Exists(realStrings) && File.Exists(realHeader) && File.Exists(realDm))
-    {
-        string s = File.ReadAllText(realStrings), h = File.ReadAllText(realHeader), d = File.ReadAllText(realDm);
-        var rs = RemoteInfo.ParseSetnames(s);
-        var rr = RemoteInfo.ParseBits(h, "RACE", s);
-        var ra = RemoteInfo.ParseBits(h, "ATTRIBUTE", s);
-        var rt = RemoteInfo.ParseBits(h, "TYPE", s, d);
-        Console.WriteLine($"GitHub files: {rs.Count} setnames, {rr.Count} races, {ra.Count} attributes, types: {string.Join(",", rt.Select(t => t.Text))}");
-        Check(rs.Count > 0 && rr.Count >= 26 && rr.All(r => r.Value < 0x4000000) && ra.Count == 7 && rt.Any(t => t == new InfoItem(0x8000000, "액세스")) && rt.All(t => !t.Text.Contains('_')),
-              "real GitHub files parsed");
-    }
-}
-
 // 7d. updates: GitHub release answer, version compare, and the updater script on a temp folder
 {
     string Release(string tag, string asset = "YellowEditorX-1.2.0.zip", bool pre = false) =>
