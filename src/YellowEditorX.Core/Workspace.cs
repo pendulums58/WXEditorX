@@ -9,7 +9,7 @@ public sealed class DbEntry
     public DbEntry(string path)
     {
         Path = System.IO.Path.GetFullPath(path);
-        // Each archetype has its own folder, so the folder name (겔지, 결연희...) says more than the file name.
+        // Each pack has its own folder, so the folder name says more than the file name.
         string folder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(Path)) ?? "";
         Title = folder.Length > 0 ? folder : System.IO.Path.GetFileNameWithoutExtension(Path);
         Detail = System.IO.Path.GetFileName(Path);
@@ -21,7 +21,7 @@ public sealed class DbEntry
 /// <summary>Helpers over a set of card databases.</summary>
 public static class Workspace
 {
-    /// <summary>Every .cdb under a folder (for example 오리카, whose sub folders each hold one archetype).</summary>
+    /// <summary>Every pack .db under a folder (for example 오리카, whose sub folders each hold one pack).</summary>
     public static List<DbEntry> Scan(string root, int maxDepth = 3)
     {
         var list = new List<DbEntry>();
@@ -35,8 +35,8 @@ public static class Workspace
     {
         try
         {
-            foreach (var f in Directory.GetFiles(dir, "*.cdb"))
-                list.Add(new DbEntry(f));
+            foreach (var f in Directory.GetFiles(dir, "*.db"))
+                if (CardDb.IsPack(f)) list.Add(new DbEntry(f));
             if (depth >= maxDepth) return;
             foreach (var d in Directory.GetDirectories(dir))
             {
@@ -68,11 +68,14 @@ public static class Workspace
         return hits;
     }
 
+    /// <summary>Official cards use 1~999,999; each orica pack a block of a million.</summary>
+    public const long BlockSize = 1_000_000;
+
     /// <summary>The first unused code after start (or after the largest code when start is 0).</summary>
     public static long NextFreeCode(ICollection<long> used, long start)
     {
         if (start <= 0)
-            start = used.Count > 0 ? used.Max() : 100000000 - 1;
+            start = used.Count > 0 ? used.Max() : BlockSize;
         long id = start + 1;
         while (used.Contains(id)) id++;
         return id;

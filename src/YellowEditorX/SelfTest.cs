@@ -38,8 +38,7 @@ public partial class MainWindow
         }
     }
 
-    TextBox StrBox(int i) => Children<TextBox>(StringsList).ElementAt(i);
-    ToggleButton Chip(string text) => Children<ToggleButton>(Editor).First(b => b is not RadioButton && (b.Content as string) == text);
+    ToggleButton Chip(string text) => Children<ToggleButton>(Editor).First(b => (b.Content as string) == text);
     static void Press(Button b) => b.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
 
     async Task Select(int index)
@@ -66,424 +65,156 @@ public partial class MainWindow
         enc.Save(fs);
     }
 
+    /// <summary>
+    /// outDir gets the report's screenshots. The workspace copy must hold a copy of the official wixoss.db;
+    /// a new pack is made next to it.
+    /// </summary>
     public async Task<string> RunSelfTest(string outDir)
     {
         WindowState = WindowState.Normal;
         Width = 1920; Height = 1050;
         await Idle();
-        var gelz = dbs.First(d => d.Title == "겔지");
-        DbList.SelectedItem = gelz;
-        await Idle();
-        string db = gelz.Path;
-        var files = new CardFiles(db);
-        Card Row(long id) => CardDb.Read(db, id)!;
 
-        T(allRows.Count == 14, $"14 cards listed ({allRows.Count})");
-        T(NameBox.Text == "폐지 줍는 할아버지", "first card shown: " + NameBox.Text);
-        T(CardImage.Source != null, "card picture shown");
-        Snapshot(outDir, "self_1_start.png");
-
-        // 1. a typed string, then moving to another card and discarding: nothing is written anywhere
-        await Select(1);
-        long id1 = shownRows[1].Card.Id;
-        var before1 = Row(id1);
-        StrBox(3).Text = "임시 스트링";
+        // 1. the official DB: ja text read-only, prints listed
+        var official = dbs.First(d => CardDb.ReadAll(d.Path).Any(c => c.IsOfficial));
+        DbList.SelectedItem = official;
         await Idle();
-        T(Title.StartsWith("●"), "title shows unsaved mark");
-        Answer(MessageBoxResult.No);
-        await Select(2);
-        T(testPrompts.Count == 1 && testPrompts[0].Contains("저장하지 않은"), "asked about unsaved changes");
-        T(Row(id1).SameAs(before1), "discard left the db unchanged");
-        T(StrBox(3).Text == Row(shownRows[2].Card.Id).Str[3], "next card shows its own string 3");
-        await Select(1);
-        T(StrBox(3).Text == before1.Str[3], "string 3 back to saved value");
-
-        // 2. edit the name, save, undo
-        NameBox.Text = "할아버지 수정본";
-        Press(SaveButton);
-        await Idle();
-        T(Row(id1).Name == "할아버지 수정본" && Row(id1).Ot == 0x20, "saved to db with rule 0x20");
-        T(!Title.StartsWith("●"), "title clean after save");
-        T(shownRows.First(r => r.Card.Id == id1).Name == "할아버지 수정본", "list shows new name");
-        Press(UndoButton);
-        await Idle();
-        T(Row(id1).SameAs(before1), "undo restored the row exactly");
-        T(NameBox.Text == before1.Name, "editor shows restored name");
-
-        // 3. typing a string and switching with save: it lands on its own card only
-        StrBox(3).Text = "1번 카드 전용";
-        await Idle();
-        Answer(MessageBoxResult.Yes);
-        await Select(3);
-        long id3 = shownRows[3].Card.Id;
-        T(Row(id1).Str[3] == "1번 카드 전용", "string saved on its own card");
-        T(Row(id3).Str[3] == "" && StrBox(3).Text == "", "next card did not get the string");
-        T(currentRow != null && currentRow.Card.Id == id3 && CardList.SelectedItem == currentRow && shownRows.Contains(currentRow), "list selection follows to the next card after saving");
-
-        // 3b. a long string wraps onto more lines instead of scrolling sideways
-        double oneLine = StrBox(5).ActualHeight;
-        string saved5 = StrBox(5).Text;
-        StrBox(5).Text = string.Concat(Enumerable.Repeat("길게 이어지는 스트링 문장 ", 14));
-        await Idle();
-        T(StrBox(5).ActualHeight > oneLine * 1.8 && StrBox(5).LineCount >= 2, $"long string wraps ({oneLine:0} -> {StrBox(5).ActualHeight:0}, {StrBox(5).LineCount} lines)");
-        Snapshot(outDir, "self_1b_wrap.png");
-        StrBox(5).Text = saved5;
-        await Idle();
-        T(!model.IsDirty, "back to saved string is clean");
-
-        // 3c. strings take line breaks and grow; cut / paste work while the clipboard is busy (MuMu)
-        StrBox(6).Text = "첫 줄\r\n둘째 줄";
-        await Idle();
-        T(StrBox(6).AcceptsReturn && StrBox(6).LineCount == 2 && StrBox(6).ActualHeight > oneLine * 1.6, "line break in a string makes the box taller");
-        T(model.ToCard().Str[6] == "첫 줄\r\n둘째 줄", "line break kept in the string");
-        int busy = 3;
-        ClipboardText.TestWrite = () => busy-- <= 0;
-        ClipboardText.TestWrites = 0;
-        var box = StrBox(6);
-        box.Focus();
-        box.SelectAll();
-        ApplicationCommands.Cut.Execute(null, box);
-        T(box.Text == "", "cut removes the text at once even though the clipboard is busy");
-        ApplicationCommands.Paste.Execute(null, box);
-        T(box.Text == "첫 줄\r\n둘째 줄" && box.CaretIndex == box.Text.Length, "paste right after cut is immediate");
-        await Task.Delay(200);
-        T(ClipboardText.TestWrites == 1, "clipboard written in the background once it was free");
-        NameBox.Focus();
-        NameBox.SelectAll();
-        ApplicationCommands.Paste.Execute(null, NameBox);
-        T(NameBox.Text == "첫 줄 둘째 줄", "multi-line paste into the name becomes one line: " + NameBox.Text);
-        ClipboardText.TestWrite = null;
-        Answer(MessageBoxResult.No);
+        T(allRows.Count > 7000, $"official cards listed ({allRows.Count})");
         await Select(0);
-        await Select(3);
+        var first = currentRow!.Card;
+        T(model.HasJa && model.JaName == first.Ja.Name && model.IsOfficial && model.Prints.Count == first.Prints.Count && model.Prints.Count > 0,
+          $"official card shown: {model.JaName}, prints {model.Prints.Count}");
+        T(!model.IsDirty, "showing a card changes nothing");
+        T(model.ShowLimit && !model.ShowPower, "ルリグ: limit shown, power hidden");
+        Snapshot(outDir, "official.png");
 
-        // 4. link: markers appear, arrows set the rating; pendulum shows scales; spell hides monster fields
-        await Select(0);
-        Chip("링크").IsChecked = true;
+        // 2. a ko translation of an official card: only texts(ko) is added, ja and card_meta stay as they were
+        string oldKo = first.Ko.Name;
+        NameBox.Text = "테스트 번역";
         await Idle();
-        T(MarkerGrid.IsVisible, "link markers visible");
-        var markers = Children<ToggleButton>(MarkerGrid).ToList();
-        markers[1].IsChecked = true; markers[8].IsChecked = true;
-        await Idle();
-        T(model.Level == "2" && model.ToCard().Def == (0x80 | 0x4), $"link rating {model.Level}, def {model.ToCard().Def:x}");
-        var markerFace = (System.Windows.Controls.Border)markers[1].Template.FindName("b", markers[1]);
-        T(markerFace.Background is SolidColorBrush mb && mb.Color == ((SolidColorBrush)FindResource("Accent")).Color, "checked link marker is blue");
-        Snapshot(outDir, "self_2_link.png");
-        Chip("링크").IsChecked = false;
-        Chip("펜듈럼").IsChecked = true;
-        await Idle();
-        T(ScaleLabel.IsVisible && !MarkerGrid.IsVisible, "pendulum scales visible");
-        T(string.Join(",", model.SubTypes.Take(4).Select(t => t.Text)) == "몬스터,마법,함정,일반",
-            "몬스터 / 마법 / 함정 are chips before 일반: " + string.Join(",", model.SubTypes.Take(4).Select(t => t.Text)));
-        string atkBefore = model.Atk, levelBefore = model.Level;
-        long attrBefore = model.Attribute;
-        Chip("마법").IsChecked = true;
-        await Idle();
-        T(Chip("몬스터").IsChecked == true && (model.ToCard().Type & (CardTypes.Monster | CardTypes.Spell)) == (CardTypes.Monster | CardTypes.Spell),
-            "몬스터 and 마법 together");
-        Chip("몬스터").IsChecked = false;
-        await Idle();
-        T(AttributeLabel.IsVisible && ScaleLabel.IsVisible && Chip("펜듈럼").IsChecked == true, "spell keeps attribute / stats and its 펜듈럼 scales");
-        T(model.Atk == atkBefore && model.Level == levelBefore && model.Attribute == attrBefore && model.ToCard().Atk == CardDb.Read(db, model.Original!.Id)!.Atk,
-            "stats kept when switching to spell");
-        Chip("펜듈럼").IsChecked = false;
-        await Idle();
-        T(!ScaleLabel.IsVisible, "scales go with 펜듈럼");
-        Chip("기프트").IsChecked = true;
-        Chip("함정").IsChecked = true;
-        T((model.ToCard().Type & (CardTypes.MainTypes | CardTypes.Gift)) == (CardTypes.Spell | CardTypes.Trap | CardTypes.Gift), "마법 + 함정 + 기프트 bits");
-        Chip("함정").IsChecked = false;
-        Chip("기프트").IsChecked = false;
-        await Idle();
-        Snapshot(outDir, "self_3_spell.png");
-        // 키-해금됨 brings 키 along; taking 키-해금됨 off leaves 키 on.
-        Chip("몬스터").IsChecked = true;
-        Chip("마법").IsChecked = false;
-        await Idle();
-        Chip("키").IsChecked = false;
-        Chip("키-해금됨").IsChecked = true;
-        await Idle();
-        T(Chip("키").IsChecked == true && (model.ToCard().Type & (CardTypes.Key | CardTypes.Unlocked)) == (CardTypes.Key | CardTypes.Unlocked),
-          "키-해금됨 turns 키 on too");
-        Chip("키-해금됨").IsChecked = false;
-        await Idle();
-        T(Chip("키").IsChecked == true && (model.ToCard().Type & CardTypes.Unlocked) == 0, "키-해금됨 off leaves 키 on");
-        Chip("키").IsChecked = false;
-        Chip("키-해금됨").IsChecked = false;
+        T(model.IsDirty, "typing makes the card unsaved");
+        T(SaveCurrent(), "official card saved");
+        var back = CardDb.Read(official.Path, first.Id)!;
+        T(back.Ko.Name == "테스트 번역" && back.Ja.SameAs(first.Ja) && !back.HasMeta && back.Prints.Count == first.Prints.Count
+          && back.Kind.SequenceEqual(first.Kind) && back.Color == first.Color && back.Level == first.Level,
+          "ko saved, ja / prints / card_meta untouched");
+        Undo();
+        T(CardDb.Read(official.Path, first.Id)!.Ko.Name == oldKo, "undo puts the old ko text back");
 
-        // 5. duplicate (discarding the edits above), save, picture copied
-        Answer(MessageBoxResult.No);
-        Press(DuplicateButton);
+        // 3. a new pack with the build_db.py tables
+        string packDir = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(official.Path))!, "selftest_pack");
+        if (Directory.Exists(packDir)) Directory.Delete(packDir, true);
+        string pack = Path.Combine(packDir, "TestPack.db");
+        CardDb.Create(pack);
+        T(CardDb.IsPack(pack), "new pack has the four tables");
+        T(AddDb(pack), "new pack opened");
+        RememberDbView();
+        RefreshDbList(pack);
         await Idle();
-        T(model.Code == "101232014" && model.IsNew, "duplicate got next free code " + model.Code);
-        T(model.Name == "폐지 줍는 할아버지" && model.IsMonster, "duplicate keeps the saved card, not the discarded edits");
-        NameBox.Text = "복제 테스트";
+        T(currentDb != null && SamePath(currentDb.Path, pack) && allRows.Count == 0, "new pack is empty");
+
+        // 4. a new card: next free code after the official block, fields by kind
+        settings.LastMaker = "시안";
+        NewCard();
+        await Idle();
+        T(model.Code == "1000001", $"first code of the new pack: {model.Code}");
+        T(model.Maker == "시안" && model.Prints.Count == 1, "maker filled in, one print");
+        T(model.ShowPower && !model.ShowLimit && !model.ShowGrow, "シグニ: power shown, limit and grow hidden");
+        NameBox.Text = "테스트 시그니";
+        model.Level = "3";
+        model.Power = "8000";
+        Chip("赤").IsChecked = true;
+        Chip("青").IsChecked = true;
+        model.Append(nameof(EditorModel.Classes), "精武：アーム");
+        model.Append(nameof(EditorModel.Classes), "精武：ウェポン");
+        model.LifeBurst = true;
+        model.LbText = "카드를 1장 뽑는다.";
+        model.Ability = "【常】：이 시그니의 파워는 +1000된다.";
+        model.Prints[0].CardNo = "TEST-001";
+        model.Prints[0].Rarity = "SR";
+        await Idle();
+        Chip("無").IsChecked = true;
+        T(Chip("赤").IsChecked == false && Chip("青").IsChecked == false, "無 turns the colors off");
+        Chip("赤").IsChecked = true;
+        Chip("青").IsChecked = true;
+        T(Chip("無").IsChecked == false, "a color turns 無 off");
+        T(SaveCurrent(), "new card saved");
+        var saved = CardDb.Read(pack, 1000001)!;
+        string today = DateTime.Today.ToString(EditorModel.DateFormat);
+        T(saved.Ko.Name == "테스트 시그니" && saved.Ja.IsEmpty && saved.Source == Card.Orica && saved.Kind.SequenceEqual(new[] { "シグニ" })
+          && saved.Color == (Card.Red | Card.Blue) && saved.Level == 3 && saved.Power == 8000 && saved.Limit == null
+          && saved.Class.SequenceEqual(new[] { "精武：アーム", "精武：ウェポン" }) && saved.LifeBurst && saved.Ko.LifeBurst == "카드를 1장 뽑는다."
+          && saved.Prints.Count == 1 && saved.Prints[0].CardNo == "TEST-001" && saved.Prints[0].Rarity == "SR"
+          && saved.Maker == "시안" && saved.Created == today && saved.Modified == today,
+          "new card read back field by field");
+        T(!model.IsDirty && currentRow?.Card.Id == 1000001, "saved card is the current row");
+
+        // 5. images: idx 1 is pics\<cid>.png, idx 2 pics\<cid>_2.png
+        var bmp = BitmapSource.Create(4, 6, 96, 96, PixelFormats.Bgr32, null, new byte[4 * 6 * 4], 4 * 4);
+        ImportImage(bmp, "test");
+        var files = new CardFiles(pack);
+        T(File.Exists(files.Picture(1000001)) && CardImage.Source != null, "picture of idx 1 written and shown");
+        model.AddPrint();
+        model.Prints[1].CardNo = "TEST-001P";
+        await Idle();
+        T(model.PictureIdx == 2 && CardImage.Source == null, "new print selected, no picture yet");
+        ImportImage(bmp, "test");
+        T(File.Exists(files.Picture(1000001, 2)), "picture of idx 2 written as _2");
+        T(SaveCurrent() && CardDb.Read(pack, 1000001)!.Prints.Select(p => p.Idx).SequenceEqual(new[] { 1, 2 }), "two prints saved");
+        model.MovePrint(model.Prints[1], -1);
+        T(model.Prints[0].CardNo == "TEST-001P" && model.Prints[0].Idx == 1 && model.Prints[1].Idx == 2, "moving a print renumbers idx");
+        model.Load(CardDb.Read(pack, 1000001));
+
+        // 6. checks before saving
+        model.Power = "abc";
         Answer();
-        Press(SaveButton);
-        await Idle();
-        T(CardDb.Read(db, 101232014)?.Name == "복제 테스트", "duplicate saved");
-        T(File.Exists(files.Picture(101232014)) && File.Exists(files.Thumbnail(101232014)), "duplicate picture copied");
-        T(!File.Exists(files.Script(101232014)), "duplicate does not copy the script");
-        T(allRows.Count == 15 && currentRow?.Card.Id == 101232014, "list has 15 cards, new one selected");
-        string today = DateTime.Today.ToString("yyyy-MM-dd");
-        T(Row(101232014).Created == today && Row(101232014).Modified == today && CreatedBox.Text == today, "new card saved with today's dates");
+        T(!SaveCurrent() && testPrompts.Any(p => p.Contains("파워")), "a bad power is refused");
+        model.Power = "∞";
+        T(model.ToCard().Power == Card.Infinite, "∞ is -1");
+        model.Power = "8000";
+        model.CostEna = "{R}{X";
+        Answer();
+        T(!SaveCurrent() && testPrompts.Any(p => p.Contains("비용")), "a bad cost is refused");
+        model.CostEna = "";
+        T(!model.IsDirty, "back to the saved values");
 
-        // 6. code change: move the card with its files
-        CodeBox.Text = "101232099";
-        Answer(MessageBoxResult.Yes);
-        Press(SaveButton);
+        // 7. duplicate copies the pictures, delete takes them away, undo brings them back
+        Duplicate();
         await Idle();
-        T(CardDb.Read(db, 101232014) == null && CardDb.Read(db, 101232099) != null, "card moved to new code");
-        T(File.Exists(files.Picture(101232099)) && !File.Exists(files.Picture(101232014)), "picture renamed");
-
-        // 7. delete with files, undo
-        Answer(MessageBoxResult.OK);
-        Press(DeleteButton);
-        await Idle();
-        T(CardDb.Read(db, 101232099) == null && !File.Exists(files.Picture(101232099)) && allRows.Count == 14, "deleted with picture");
-        Press(UndoButton);
-        await Idle();
-        T(CardDb.Read(db, 101232099) != null && File.Exists(files.Picture(101232099)) && allRows.Count == 15, "undo delete");
-
-        // 8. image import replaces the picture at 177x254, undo puts the old one back
-        var oldPic = File.ReadAllBytes(files.Picture(101232099));
-        var red = BitmapSource.Create(400, 600, 96, 96, PixelFormats.Bgr32, null, Enumerable.Repeat((byte)0x80, 400 * 600 * 4).ToArray(), 400 * 4);
-        ImportImage(red, "test");
-        await Idle();
-        var pic = ImageTools.Load(files.Picture(101232099))!;
-        var thumb = ImageTools.Load(files.Thumbnail(101232099))!;
-        T(pic.PixelWidth == 177 && pic.PixelHeight == 254 && thumb.PixelWidth == 44 && thumb.PixelHeight == 64, "imported picture and thumbnail sizes");
-        Press(UndoButton);
-        await Idle();
-        T(File.ReadAllBytes(files.Picture(101232099)).SequenceEqual(oldPic), "undo image import");
-
-        // 8b. the image dialog opens only for a click that started on the image box
-        //     (double-clicking a file in the dialog lets the button go over the box afterwards)
-        MouseButtonEventArgs MouseArgs(RoutedEvent ev) => new(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = ev };
-        testImageDialogs = 0;
-        ImageBox.RaiseEvent(MouseArgs(UIElement.MouseLeftButtonUpEvent));
-        T(testImageDialogs == 0, "button released over the image box without a press there: no dialog");
-        ImageBox.RaiseEvent(MouseArgs(UIElement.MouseLeftButtonDownEvent));
-        ImageBox.RaiseEvent(MouseArgs(UIElement.MouseLeftButtonUpEvent));
-        T(testImageDialogs == 1, "click on the image box opens the dialog");
-        ImageBox.RaiseEvent(MouseArgs(UIElement.MouseLeftButtonDownEvent));
-        RaiseEvent(MouseArgs(UIElement.PreviewMouseLeftButtonDownEvent)); // a later press somewhere else
-        ImageBox.RaiseEvent(MouseArgs(UIElement.MouseLeftButtonUpEvent));
-        T(testImageDialogs == 1, "a press elsewhere cancels a pending image click");
-
-        // 8c. dropping an image file anywhere on the window makes it the card picture
-        string dropPng = Path.Combine(outDir, "drop_test.png");
-        using (var fs = File.Create(dropPng)) { var enc = new PngBitmapEncoder(); enc.Frames.Add(BitmapFrame.Create(red)); enc.Save(fs); }
-        long shownId = long.Parse(model.Code);
-        byte[]? shownPic = File.Exists(files.Picture(shownId)) ? File.ReadAllBytes(files.Picture(shownId)) : null;
-        T(DropFiles(new[] { dropPng }) && File.Exists(files.Picture(shownId)) && ImageTools.Load(files.Picture(shownId))!.PixelWidth == 177
-          && (shownPic == null || !File.ReadAllBytes(files.Picture(shownId)).SequenceEqual(shownPic)), "dropped image file imported for the shown card " + shownId);
-        Press(UndoButton);
-        await Idle();
-        T(shownPic == null ? !File.Exists(files.Picture(shownId)) : File.ReadAllBytes(files.Picture(shownId)).SequenceEqual(shownPic), "undo dropped image");
-        T(!DropFiles(new[] { Path.Combine(outDir, "notes.txt") }), "other files are not taken");
-
-        // 9. copy to another database with files, then undo
-        var other = dbs.First(d => d.Title == "결연희");
+        T(model.Code == "1000002" && model.IsNew, $"duplicate gets the next code: {model.Code}");
+        T(SaveCurrent(), "duplicate saved");
+        T(File.Exists(files.Picture(1000002)) && File.Exists(files.Picture(1000002, 2)), "duplicate got both pictures");
         CardList.SelectedItems.Clear();
-        CardList.SelectedItem = shownRows.First(r => r.Card.Id == 101232099);
+        CardList.SelectedItem = shownRows.First(r => r.Card.Id == 1000002);
         await Idle();
-        Answer();
-        CopySelectedTo(other, move: false);
-        var otherFiles = new CardFiles(other.Path);
-        T(CardDb.Read(other.Path, 101232099)?.Name == "복제 테스트" && File.Exists(otherFiles.Picture(101232099)), "copied to 결연희 with picture");
-        Press(UndoButton);
-        await Idle();
-        T(CardDb.Read(other.Path, 101232099) == null && !File.Exists(otherFiles.Picture(101232099)), "undo copy");
-
-        // 10. filter, sort
-        FilterBox.Text = "미래가 함정";
-        await Idle();
-        T(shownRows.Count == 3, $"filter '미래가 함정' (kind counts too) -> {shownRows.Count}");
-        FilterBox.Text = "";
-        sortKey = "Name"; sortAscending = true; ApplyFilter();
-        T(shownRows.Select(r => r.Name).SequenceEqual(shownRows.Select(r => r.Name).OrderBy(n => n)), "sort by name");
-        sortKey = "Code"; ApplyFilter();
-
-        // 11. new card asks nothing when clean and gets the next code
-        await Select(0);
-        Answer();
-        Press(NewButton);
-        await Idle();
-        T(testPrompts.Count == 0 && model.IsNew && model.Code == "101232100", "new card code " + model.Code);
-        T(!model.HasUnsavedWork, "blank new card is not unsaved work");
-        Snapshot(outDir, "self_4_new.png");
-
-        // 12. switching database with unsaved work asks first; cancel stays
-        NameBox.Text = "작성 중";
-        Answer(MessageBoxResult.Cancel);
-        DbList.SelectedItem = other;
-        await Idle();
-        T(testPrompts.Count == 1 && currentDb == gelz && DbList.SelectedItem == gelz && model.Name == "작성 중", "cancel keeps the database and the text");
-        Answer(MessageBoxResult.No);
-        DbList.SelectedItem = other;
-        await Idle();
-        T(currentDb == other && allRows.Count == 25, "switched to 결연희 (" + allRows.Count + ")");
-
-        // 13. 제작 정보: footer lines shown as fields, saved back without [카드군], dates only in the table
-        await Select(0);
-        var lp = CardDb.Read(other.Path, currentRow!.Card.Id)!;
-        T(MakerBox.Text == "이피 / YiPi" && TagsBox.Text.Length > 0 && !DescBox.Text.Contains("[이피") && !model.IsDirty,
-            $"footer shown in fields: '{MakerBox.Text}' / '{TagsBox.Text}'");
-        T(FooterFields.IsVisible && MakerBox.ActualWidth > 80, "footer fields visible");
-        Snapshot(outDir, "self_5_footer.png");
-        TagsBox.Text += ", 추가 태그";
-        Answer();
-        Press(SaveButton);
-        await Idle();
-        var ls = CardDb.Read(other.Path, lp.Id)!;
-        T(ls.Desc.EndsWith("[이피 / YiPi]\r\n[태그: 연옥의 결연희, 추가 태그]") && !ls.Desc.Contains("카드군") && !ls.Desc.Contains("수정일"),
-            "footer saved, comma in the tag kept as typed: " + ls.Desc[^60..].Replace("\r\n", "⏎"));
-        // A card number the site can't read is caught before saving.
-        NumberBox.Text = "AB-1";
         Answer(MessageBoxResult.OK);
-        Press(SaveButton);
-        await Idle();
-        T(testPrompts.Count == 1 && testPrompts[0].Contains("카드 번호") && model.IsDirty, "loose card number stops the save");
-        NumberBox.Text = "";
-        T(!model.IsDirty, "clearing the number again is clean");
-        T(ls.Modified == today && ls.Created == "" && ModifiedBox.Text == today, "edited card: 수정일 today, 제작일 untouched");
-        T(ls.Ot == 0x20, $"rule 0x20 (was 0x{lp.Ot:x})");
-        ls.Desc = lp.Desc; ls.Modified = ""; ls.Ot = lp.Ot;
-        T(ls.SameAs(lp), "nothing else changed");
-        // 숨김 adds SCOPE_HIDDEN (0x1000) to the saved rule and takes it off again.
-        T(HiddenBox.IsVisible && HiddenBox.IsChecked == false, "숨김 box shown, off");
-        HiddenBox.IsChecked = true;
-        T(model.IsDirty, "숨김 makes the card unsaved");
-        Answer();
-        Press(SaveButton);
-        await Idle();
-        T(CardDb.Read(other.Path, lp.Id)!.Ot == (Card.RuleCustom | Card.ScopeHidden) && HiddenBox.IsChecked == true && !model.IsDirty, "숨김 saved as ot 0x1020");
-        HiddenBox.IsChecked = false;
-        Answer();
-        Press(SaveButton);
-        await Idle();
-        T(CardDb.Read(other.Path, lp.Id)!.Ot == Card.RuleCustom, "숨김 off saved as ot 0x20");
-        Answer();
-        Press(NewButton);
-        await Idle();
-        T(MakerBox.Text == "이피 / YiPi" && !model.HasUnsavedWork, "new card gets the last maker");
+        DeleteSelected();
+        T(!CardDb.ReadIds(pack).Contains(1000002) && !File.Exists(files.Picture(1000002)), "deleted with its pictures");
+        Undo();
+        T(CardDb.ReadIds(pack).Contains(1000002) && File.Exists(files.Picture(1000002, 2)), "undo brings the card and pictures back");
 
-        // 14. opening a cdb adds it to the list; CDB 닫기 takes it off again and leaves the file
-        string outside = Path.Combine(outDir, "outside_test", "Outside.cdb");
-        if (File.Exists(outside)) File.Delete(outside);
-        CardDb.Create(outside);
-        CardDb.Write(outside, new[] { new Card { Id = 5, Name = "외부 카드", Type = CardTypes.Monster } });
-        AddDb(outside);
-        RefreshDbList(outside);
-        await Idle();
-        var ext = dbs.FirstOrDefault(d => SamePath(d.Path, outside));
-        T(ext != null && ext.Title == "outside_test" && currentDb == ext && allRows.Count == 1, "opened cdb added and shown");
-        Snapshot(outDir, "self_6_open.png");
-        // Right-click must work on the empty right part of a row too, not only on the text.
-        var item = (ListBoxItem)DbList.ItemContainerGenerator.ContainerFromItem(ext!);
-        var hit = item.InputHitTest(new Point(item.ActualWidth - 10, item.ActualHeight / 2)) as DependencyObject;
-        while (hit != null && !(hit is FrameworkElement { ContextMenu: not null })) hit = VisualTreeHelper.GetParent(hit);
-        T(hit != null, "right edge of a cdb row has the CDB 닫기 menu");
-        NameBox.Text = "고치는 중";
-        Answer(MessageBoxResult.Cancel);
-        CloseDb(ext!);
-        await Idle();
-        T(currentDb == ext && dbs.Contains(ext!) && model.Name == "고치는 중", "cancel keeps the cdb open");
-        Answer(MessageBoxResult.No);
-        CloseDb(ext!);
-        await Idle();
-        T(!dbs.Any(d => SamePath(d.Path, outside)) && !settings.OpenDbs.Any(p => SamePath(p, outside)) && File.Exists(outside), "closed: off the list, file kept");
-        T(currentDb != null && currentDb != ext && allRows.Count > 0, "another cdb shown after closing the current one: " + currentDb?.Title);
-        var shown = currentDb!;
-        int before = dbs.Count;
-        Answer();
-        CloseDb(dbs.First(d => d != shown));
-        T(dbs.Count == before - 1 && currentDb == shown && testPrompts.Count == 0, "closing another cdb asks nothing and keeps the current one");
+        // 8. the script is named after the cid
+        var lua = files.EnsureScript(CardDb.Read(pack, 1000002)!, out bool made);
+        T(made && Path.GetFileName(lua) == "c1000002.lua" && File.ReadAllText(lua).StartsWith("--테스트 시그니"), "script made from the template");
 
-        // 14b. dropping a .cdb file opens it; search finds cards by a piece of their text
-        Answer();
-        T(DropFiles(new[] { outside }) && currentDb != null && SamePath(currentDb.Path, outside) && dbs.Count == before, "dropped cdb opened");
-        Answer();
-        DbList.SelectedItem = dbs.First(d => SamePath(d.Path, shown.Path)); // the list was read again, so a new entry
-        await Idle();
-        var withText = allRows.First(r => r.Card.Desc.Replace("\r\n", "").Length > 30).Card;
-        string piece = withText.Desc.Replace("\r\n", " ").Substring(10, 8).Trim();
-        FilterBox.Text = piece;
-        await Idle();
-        T(shownRows.Any(r => r.Card.Id == withText.Id) && shownRows.Count < allRows.Count, $"search by card text '{piece}' → {shownRows.Count}");
-        FilterBox.Text = withText.Name;
-        await Idle();
-        T(shownRows.Any(r => r.Card.Id == withText.Id), "search by name");
-        // Each cdb keeps its own search and chosen card while going to another one and back.
-        FilterBox.Text = piece;
-        await Idle();
-        var keep = shownRows[^1];
-        CardList.SelectedItem = keep;
-        await Idle();
-        Answer();
-        DbList.SelectedItem = dbs.First(d => SamePath(d.Path, outside));
-        await Idle();
-        T(FilterBox.Text == "" && shownRows.Count == allRows.Count, "other cdb starts with an empty search");
-        FilterBox.Text = "외부";
-        await Idle();
-        DbList.SelectedItem = dbs.First(d => SamePath(d.Path, shown.Path));
-        await Idle();
-        T(FilterBox.Text == piece && currentRow?.Card.Id == keep.Card.Id && keep.Card.Id != shownRows[0].Card.Id && CardList.SelectedItem == currentRow,
-            $"back: search '{FilterBox.Text}' and card {currentRow?.Card.Id} kept");
-        DbList.SelectedItem = dbs.First(d => SamePath(d.Path, outside));
-        await Idle();
-        T(FilterBox.Text == "외부" && currentRow?.Card.Id == 5, "the other cdb kept its own search");
-        DbList.SelectedItem = dbs.First(d => SamePath(d.Path, shown.Path));
-        await Idle();
-        FilterBox.Text = "";
+        Snapshot(outDir, "orica.png");
 
-        // 14d. after a restart by the updater: a good update refreshes the Windows icons, a failed one says so
-        string? oldLog = File.Exists(UpdateLog) ? File.ReadAllText(UpdateLog) : null;
-        Directory.CreateDirectory(UpdateDir);
-        File.WriteAllText(UpdateLog, "ok");
-        settings.UpdatingTo = "9.9.9";
-        Answer();
-        ReportUpdate();
-        T(iconRefreshes == 1 && settings.UpdatingTo == null && testPrompts.Count == 0 && StatusText.Text.Contains("업데이트했어요"),
-          "successful update: status shown, icons refreshed");
-        File.WriteAllText(UpdateLog, "failed: test");
-        settings.UpdatingTo = "9.9.9";
-        Answer(MessageBoxResult.OK);
-        ReportUpdate();
-        T(iconRefreshes == 1 && testPrompts.Count == 1 && testPrompts[0].Contains("failed: test"), "failed update: told, no icon refresh");
-        ReportUpdate();
-        T(iconRefreshes == 1, "nothing to report on a normal start");
-        if (oldLog != null) File.WriteAllText(UpdateLog, oldLog); else File.Delete(UpdateLog);
-        model.Setcodes[3].Hex = "";
+        // 9. copying text goes through ClipboardText (a busy clipboard is retried)
+        bool busy = true;
+        ClipboardText.TestWrite = () => !busy;
+        ClipboardText.SetText("【出】カード");
+        T(ClipboardText.GetText() == "【出】カード" && ClipboardText.TestWrites == 0, "copied text kept while the clipboard is busy");
+        busy = false;
+        await Task.Delay(100);
+        T(ClipboardText.TestWrites == 1, "written once the clipboard is free");
+        ClipboardText.TestWrite = null;
 
-        // 15. settings from the workspace version become the open list
-        string wsRoot = Path.GetDirectoryName(Path.GetDirectoryName(gelz.Path))!;
-        var old = new Settings { Workspace = wsRoot, ExtraDbs = new() { outside }, ReadOnly = true };
-        old.MigrateWorkspace();
-        T(old.OpenDbs.Count == 16 && old.Workspace == null && old.ExtraDbs == null, $"workspace settings migrated ({old.OpenDbs.Count} cdbs)");
-
-        // 16. the wider 종류 column: a new settings file and a saved older one end up the same, once
-        var fresh = new Settings { ReadOnly = true };
-        fresh.MigrateLayout();
-        var saved = System.Text.Json.JsonSerializer.Deserialize<Settings>("{\"ListWidth\": 430}")!;
-        saved.MigrateLayout();
-        var dragged = System.Text.Json.JsonSerializer.Deserialize<Settings>("{\"ListWidth\": 500}")!;
-        dragged.MigrateLayout(); dragged.MigrateLayout();
-        T(fresh.ListWidth == 470 && saved.ListWidth == 470 && dragged.ListWidth == 540 && dragged.ListLayout == 1,
-            $"list width after the layout change: new {fresh.ListWidth}, saved {saved.ListWidth}, dragged {dragged.ListWidth}");
-        T(Math.Abs(ListColumn.ActualWidth - 470) < 1, $"list starts 470 wide: {ListColumn.ActualWidth}");
-
-        // 17. the ▾ menu shows which program opens scripts
+        // 10. the ▾ menu shows which program opens scripts
         var editorBefore = settings.ScriptEditor;
         settings.ScriptEditor = null;
         ScriptMenuButton_Click(this, new RoutedEventArgs());
         T(ScriptMenu.IsOpen && (string)ScriptEditorItem.Header == "지금: Windows 기본 프로그램" && !ResetScriptEditorItem.IsEnabled,
             $"script menu, default: {ScriptEditorItem.Header}");
-        ScriptMenu.IsOpen = false;
-        settings.ScriptEditor = @"C:\Tools\Code.exe";
-        ScriptMenuButton_Click(this, new RoutedEventArgs());
-        T((string)ScriptEditorItem.Header == "지금: Code.exe" && ResetScriptEditorItem.IsEnabled, $"script menu, picked: {ScriptEditorItem.Header}");
         ScriptMenu.IsOpen = false;
         settings.ScriptEditor = editorBefore;
 

@@ -11,7 +11,6 @@ public sealed class Settings
     /// <summary>The cdb files in the list on the left, in the order they were opened.</summary>
     public List<string> OpenDbs { get; set; } = new();
     public string? LastDb { get; set; }
-    public string? CardInfo { get; set; }
     public double Zoom { get; set; } = 1.0;
     public double ListWidth { get; set; } = 430;
     /// <summary>Which list layout ListWidth was saved for; see <see cref="MigrateLayout"/>.</summary>

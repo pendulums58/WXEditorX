@@ -1,81 +1,93 @@
 namespace YellowEditorX.Core;
 
-/// <summary>One row of datas + texts in a .cdb file.</summary>
+/// <summary>One language row of texts. Official cards have ja; an orica only ko.</summary>
+public sealed class CardText
+{
+    public string Name = "", Reading = "", Ability = "", LifeBurst = "", Flavor = "";
+
+    public bool IsEmpty => Name.Length == 0 && Reading.Length == 0 && Ability.Length == 0 && LifeBurst.Length == 0 && Flavor.Length == 0;
+    public CardText Clone() => (CardText)MemberwiseClone();
+    public bool SameAs(CardText o) =>
+        Name == o.Name && Reading == o.Reading && Ability == o.Ability && LifeBurst == o.LifeBurst && Flavor == o.Flavor;
+}
+
+/// <summary>One row of prints: an illustration of the card. idx 1 is the main one.</summary>
+public sealed class CardPrint
+{
+    public int Idx = 1;
+    public string CardNo = "", SetCode = "", Rarity = "", Illustrator = "", Image = "", RawName = "";
+    public long? Formats;
+
+    public CardPrint Clone() => (CardPrint)MemberwiseClone();
+    public bool SameAs(CardPrint o) =>
+        Idx == o.Idx && CardNo == o.CardNo && SetCode == o.SetCode && Rarity == o.Rarity && Illustrator == o.Illustrator
+        && Image == o.Image && RawName == o.RawName && Formats == o.Formats;
+}
+
+/// <summary>
+/// One card of a pack .db: its cards row with the texts (per language), prints and card_meta rows.
+/// List columns (kind, class, ...) are JSON arrays in the database and lists here.
+/// </summary>
 public sealed class Card
 {
-    public const int StrCount = 16;
-    public const int SetcodeCount = 4;
-    /// <summary>The rule every card saved from this editor gets (오리카).</summary>
-    public const long RuleCustom = 0x20;
-    /// <summary>CyanPro SCOPE_HIDDEN: the deck editor doesn't list the card.</summary>
-    public const long ScopeHidden = 0x1000;
+    public const string Official = "official", Orica = "orica";
+    /// <summary>Color bits. 0 = 무색, null = no color at all.</summary>
+    public const int White = 1, Red = 2, Blue = 4, Green = 8, Black = 16;
+    /// <summary>Level, limit and power use this for ∞.</summary>
+    public const long Infinite = -1;
 
     public long Id;
-    public long Ot;
+    public List<string> Kind = new(), Class = new(), LimitCond = new(), Team = new(), Timing = new();
+    public long? Color, Level, Limit, Power, Coin;
+    /// <summary>Ena costs like "{R}{C}{C}". null (no cost) and "" (a cost of nothing) are both in the official data.</summary>
+    public string? CostEna, GrowEna;
+    public string CostOther = "", GrowOther = "";
+    public bool Guard, LifeBurst;
+    public string Source = Orica;
     public long Alias;
-    public long Setcode;
-    public long Type;
-    public long Atk;
-    public long Def;
-    public long Level;
-    public long Race;
-    public long Attribute;
-    public long Category;
-    public string Name = "";
-    public string Desc = "";
-    public string[] Str = NewStrings();
-    /// <summary>yyyy-MM-dd or empty. Kept in the card_dates table, which YGOPro never reads.</summary>
-    public string Created = "";
-    public string Modified = "";
 
-    public static string[] NewStrings()
-    {
-        var s = new string[StrCount];
-        Array.Fill(s, "");
-        return s;
-    }
+    public CardText Ko = new(), Ja = new();
+    public List<CardPrint> Prints = new();
+    // card_meta
+    public string Maker = "", Tags = "", Pack = "";
+    /// <summary>yyyy-MM-dd or empty.</summary>
+    public string Created = "", Modified = "";
 
-    public bool IsType(long t) => (Type & t) != 0;
-
-    public long[] GetSetcodes()
-    {
-        var r = new long[SetcodeCount];
-        for (int i = 0; i < SetcodeCount; i++)
-            r[i] = (Setcode >> (i * 16)) & 0xffff;
-        return r;
-    }
-
-    public static long PackSetcodes(IReadOnlyList<long> codes)
-    {
-        long v = 0;
-        for (int i = 0; i < Math.Min(codes.Count, SetcodeCount); i++)
-            v |= (codes[i] & 0xffff) << (i * 16);
-        return v;
-    }
+    /// <summary>The name shown in lists: ko, or ja for an official card not translated yet.</summary>
+    public string Name => Ko.Name.Length > 0 ? Ko.Name : Ja.Name;
+    public bool IsOfficial => Source == Official;
+    public bool HasMeta => Maker.Length > 0 || Tags.Length > 0 || Pack.Length > 0 || Created.Length > 0 || Modified.Length > 0;
 
     public Card Clone()
     {
         var c = (Card)MemberwiseClone();
-        c.Str = (string[])Str.Clone();
+        c.Kind = new(Kind); c.Class = new(Class); c.LimitCond = new(LimitCond); c.Team = new(Team); c.Timing = new(Timing);
+        c.Ko = Ko.Clone(); c.Ja = Ja.Clone();
+        c.Prints = Prints.Select(p => p.Clone()).ToList();
         return c;
     }
 
     public bool SameAs(Card? o)
     {
         if (o is null) return false;
-        if (Id != o.Id || Ot != o.Ot || Alias != o.Alias || Setcode != o.Setcode || Type != o.Type
-            || Atk != o.Atk || Def != o.Def || Level != o.Level || Race != o.Race
-            || Attribute != o.Attribute || Category != o.Category || Name != o.Name || Desc != o.Desc
-            || Created != o.Created || Modified != o.Modified)
-            return false;
-        for (int i = 0; i < StrCount; i++)
-            if (Str[i] != o.Str[i]) return false;
-        return true;
+        return Id == o.Id && Kind.SequenceEqual(o.Kind) && Class.SequenceEqual(o.Class) && LimitCond.SequenceEqual(o.LimitCond)
+            && Team.SequenceEqual(o.Team) && Timing.SequenceEqual(o.Timing)
+            && Color == o.Color && Level == o.Level && Limit == o.Limit && Power == o.Power && Coin == o.Coin
+            && CostEna == o.CostEna && CostOther == o.CostOther && GrowEna == o.GrowEna && GrowOther == o.GrowOther
+            && Guard == o.Guard && LifeBurst == o.LifeBurst && Source == o.Source && Alias == o.Alias
+            && Ko.SameAs(o.Ko) && Ja.SameAs(o.Ja)
+            && Prints.Count == o.Prints.Count && Prints.Zip(o.Prints).All(p => p.First.SameAs(p.Second))
+            && Maker == o.Maker && Tags == o.Tags && Pack == o.Pack && Created == o.Created && Modified == o.Modified;
     }
 
-    /// <summary>
-    /// Script id: a card whose alias is a near code (alt art) shares the alias's script.
-    /// A 키 card's unlocked version also has the locked card as alias, but it has a script of its own.
-    /// </summary>
-    public long ScriptId => Alias != 0 && Math.Abs(Id - Alias) < 10 && !IsType(CardTypes.Key) ? Alias : Id;
+    public static readonly (int Bit, string Text)[] Colors = { (White, "白"), (Red, "赤"), (Blue, "青"), (Green, "緑"), (Black, "黒") };
+
+    public static string ColorText(long? color)
+    {
+        if (color == null) return "";
+        if (color == 0) return "無";
+        return string.Concat(Colors.Where(c => (color & c.Bit) != 0).Select(c => c.Text));
+    }
+
+    public static string NumberText(long? v) => v == null ? "" : v == Infinite ? "∞" : v.Value.ToString();
 }

@@ -25,6 +25,6 @@ Program Files처럼 쓰기가 막힌 폴더에 두면 자동 업데이트가 안
 
 ```powershell
 dotnet build src\YellowEditorX
-dotnet run --project tests\YellowEditorX.Tests -- <cardinfo.txt> <cdb 사본 폴더>
-YellowEditorX.exe --selftest <cdb 사본 폴더> <결과 파일>
+dotnet run --project tests\YellowEditorX.Tests -- src\YellowEditorX\data\lists.json <wixoss.db 사본>
+YellowEditorX.exe --selftest <wixoss.db 사본이 든 폴더> <결과 파일>
 ```

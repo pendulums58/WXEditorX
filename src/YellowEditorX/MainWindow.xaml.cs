@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     readonly List<string> testPrompts = new();
     int testImageDialogs;
     readonly History history = new();
-    CardInfo info = new();
+    CardLists lists = new();
     EditorModel model = null!;
 
     List<DbEntry> dbs = new();
@@ -36,7 +36,7 @@ public partial class MainWindow : Window
     /// <summary>Code of the card a duplicate was made from, so its picture can be copied on first save.</summary>
     long duplicateSource;
 
-    /// <summary>False when the card info file could not be read; the window must not be shown then.</summary>
+    /// <summary>False when data\lists.json could not be read; the window must not be shown then.</summary>
     public bool Ready { get; }
 
     public MainWindow() : this(null) { }
@@ -46,9 +46,9 @@ public partial class MainWindow : Window
         settings = testSettings ?? Settings.Load();
         if (testSettings != null) testAnswers = new();
         InitializeComponent();
-        if (!LoadCardInfo()) return;
+        if (!LoadLists()) return;
         Ready = true;
-        model = new EditorModel(info);
+        model = new EditorModel(lists);
         DataContext = model;
         model.PropertyChanged += Model_PropertyChanged;
         ApplyZoom(settings.Zoom);
@@ -67,27 +67,19 @@ public partial class MainWindow : Window
     }
 
     #region startup and settings
-    bool LoadCardInfo()
+    bool LoadLists()
     {
-        var candidates = new List<string>();
-        if (!string.IsNullOrEmpty(settings.CardInfo)) candidates.Add(settings.CardInfo);
-        candidates.Add(Path.Combine(AppContext.BaseDirectory, "data", "cardinfo_korean.txt"));
-        foreach (var p in candidates)
+        string p = Path.Combine(AppContext.BaseDirectory, "data", "lists.json");
+        try
         {
-            if (!File.Exists(p)) continue;
-            try
-            {
-                info = CardInfo.Load(p);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Ask("카드 정보 파일을 읽지 못했어요.\n" + p + "\n\n" + ex.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
-                return false;
-            }
+            lists = CardLists.Load(p);
+            return true;
         }
-        Ask("카드 정보 파일(data\\cardinfo_korean.txt)이 없어요.", Title, MessageBoxButton.OK, MessageBoxImage.Error);
-        return false;
+        catch (Exception ex)
+        {
+            Ask("목록 파일을 읽지 못했어요.\n" + p + "\n\n" + ex.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
+        }
     }
 
     #region updates
@@ -108,7 +100,7 @@ public partial class MainWindow : Window
         try { log = File.ReadAllText(UpdateLog).Trim(); } catch { }
         if (log == "ok")
         {
-            ShowStatus($"YellowEditorX {Short(CurrentVersion)}(으)로 업데이트했어요.");
+            ShowStatus($"WXEditorX {Short(CurrentVersion)}(으)로 업데이트했어요.");
             RefreshShellIcons();
         }
         else Ask("업데이트하지 못해서 이전 버전 그대로예요.\n" + (log ?? "") + "\n\n에디터 폴더에 쓸 수 없는 곳(Program Files 등)이면 다른 폴더로 옮겨 주세요.",
@@ -210,7 +202,7 @@ public partial class MainWindow : Window
     void Window_Loaded(object sender, RoutedEventArgs e)
     {
         // No dialog at startup: the list just stays empty until a file is opened.
-        if (settings.OpenDbs.Count == 0) ShowStatus("왼쪽 위 [열기]로 cdb 파일을 여세요. 여러 개를 한 번에 고를 수 있어요.");
+        if (settings.OpenDbs.Count == 0) ShowStatus("왼쪽 위 [열기]로 팩 .db 파일을 여세요. 여러 개를 한 번에 고를 수 있어요.");
         RefreshDbList(settings.LastDb);
         if (currentDb == null) LoadEmpty();
         ReportUpdate();
@@ -262,7 +254,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Where file dialogs start: the folder that holds the current archetype folder.</summary>
+    /// <summary>Where file dialogs start: the folder that holds the current pack folder.</summary>
     string DialogFolder()
     {
         if (currentDb == null) return "";
@@ -330,11 +322,13 @@ public partial class MainWindow : Window
         if (currentDb == null) return false;
         try
         {
-            allRows = CardDb.ReadAll(currentDb.Path).Select(c => new CardRow(c, info)).ToList();
+            var cards = CardDb.ReadAll(currentDb.Path);
+            lists.AddFrom(cards);
+            allRows = cards.Select(c => new CardRow(c)).ToList();
         }
         catch (Exception ex)
         {
-            Ask("cdb 파일을 읽지 못했어요.\n" + currentDb.Path + "\n\n" + ex.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
+            Ask("DB 파일을 읽지 못했어요.\n" + currentDb.Path + "\n\n" + ex.Message, Title, MessageBoxButton.OK, MessageBoxImage.Error);
             allRows = new();
             ApplyFilter();
             return false;
@@ -356,9 +350,9 @@ public partial class MainWindow : Window
     {
         var dlg = new SaveFileDialog
         {
-            Title = "새 cdb 만들기 — 카드군 폴더 안에 저장하면 pics, script 폴더도 같이 만들어요",
-            Filter = "카드 DB (*.cdb)|*.cdb",
-            FileName = "NewArchetype.cdb",
+            Title = "새 팩 .db 만들기 — 팩 폴더 안에 저장하면 pics, script 폴더도 같이 만들어요",
+            Filter = "팩 DB (*.db)|*.db",
+            FileName = "NewPack.db",
             InitialDirectory = DialogFolder(),
         };
         if (dlg.ShowDialog(this) != true) return;
@@ -372,7 +366,7 @@ public partial class MainWindow : Window
             }
             CardDb.Create(dlg.FileName);
             string dir = Path.GetDirectoryName(dlg.FileName)!;
-            Directory.CreateDirectory(Path.Combine(dir, "pics", "thumbnail"));
+            Directory.CreateDirectory(Path.Combine(dir, "pics"));
             Directory.CreateDirectory(Path.Combine(dir, "script"));
         }
         catch (Exception ex)
@@ -390,20 +384,27 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "cdb 열기 — Ctrl이나 Shift를 누른 채 여러 개를 고를 수 있어요",
-            Filter = "카드 DB (*.cdb)|*.cdb|모든 파일|*.*",
+            Title = "팩 .db 열기 — Ctrl이나 Shift를 누른 채 여러 개를 고를 수 있어요",
+            Filter = "팩 DB (*.db)|*.db|모든 파일|*.*",
             Multiselect = true,
             InitialDirectory = DialogFolder(),
         };
         if (dlg.ShowDialog(this) != true) return;
-        foreach (var f in dlg.FileNames) AddDb(f);
-        RefreshDbList(dlg.FileNames[0]);
+        var packs = dlg.FileNames.Where(AddDb).ToList();
+        if (packs.Count > 0) RefreshDbList(packs[0]);
     }
 
-    void AddDb(string path)
+    /// <summary>Puts a pack .db on the list; a file without the pack tables is refused.</summary>
+    bool AddDb(string path)
     {
+        if (!CardDb.IsPack(path))
+        {
+            Ask("팩 DB가 아니에요 (cards / prints / card_meta / texts 테이블이 없어요).\n" + path, Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
         settings.Add(path);
         settings.Save();
+        return true;
     }
 
     void CloseDb_Click(object sender, RoutedEventArgs e)
@@ -442,8 +443,9 @@ public partial class MainWindow : Window
         {
             "Name" => r => r.Name,
             "Kind" => r => r.Kind,
-            "LevelText" => r => r.Card.Level & 0xff,
-            "Stats" => r => r.Card.Atk,
+            "ColorText" => r => r.ColorText,
+            "LevelText" => r => r.Card.Level ?? -2,
+            "PowerText" => r => r.Card.Power ?? -2,
             _ => r => r.Card.Id,
         };
         rows = sortAscending ? rows.OrderBy(key).ThenBy(r => r.Card.Id) : rows.OrderByDescending(key).ThenBy(r => r.Card.Id);
@@ -603,12 +605,12 @@ public partial class MainWindow : Window
     void Model_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(EditorModel.IsDirty) || e.PropertyName == nameof(EditorModel.IsNew)) UpdateTitle();
-        else if (e.PropertyName == nameof(EditorModel.Code)) UpdateImage();
+        else if (e.PropertyName is nameof(EditorModel.Code) or nameof(EditorModel.SelectedPrint) or nameof(EditorModel.PictureIdx)) UpdateImage();
     }
 
     void UpdateTitle()
     {
-        string t = "YellowEditorX";
+        string t = "WXEditorX";
         if (currentDb != null) t = currentDb.Title + " — " + t;
         if (model != null && model.IsDirty) t = "● " + t;
         Title = t;
@@ -637,11 +639,18 @@ public partial class MainWindow : Window
         return ids.ToArray();
     }
 
+    /// <summary>
+    /// The next free code after <paramref name="after"/>, or after the last card of this pack.
+    /// An empty pack starts a new block of a million after every open one (N*1,000,000 + 1).
+    /// </summary>
     long NextCode(long after)
     {
+        var all = AllOpenIds().ToHashSet();
         var current = allRows.Select(r => r.Card.Id).ToList();
-        if (after <= 0) after = current.Count > 0 ? current.Max() : 0;
-        return Workspace.NextFreeCode(AllOpenIds().ToHashSet(), after);
+        if (after <= 0)
+            after = current.Count > 0 ? current.Max()
+                  : (Math.Max(all.Count > 0 ? all.Max() : 0, Workspace.BlockSize - 1) / Workspace.BlockSize + 1) * Workspace.BlockSize;
+        return Workspace.NextFreeCode(all, after);
     }
 
     bool SaveCurrent()
@@ -716,12 +725,12 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>A duplicated card starts with the same picture (not the script, which is named after its code).</summary>
+    /// <summary>A duplicated card starts with the same pictures (not the script, which is named after its code).</summary>
     void CopyDuplicatePicture(HistoryEntry entry, long id)
     {
         if (duplicateSource <= 0 || currentDb == null) return;
         var f = new CardFiles(currentDb.Path);
-        foreach (var (from, to) in new[] { (f.Picture(duplicateSource), f.Picture(id)), (f.Thumbnail(duplicateSource), f.Thumbnail(id)) })
+        foreach (var (from, to) in model.Prints.Select(p => (f.Picture(duplicateSource, p.Idx), f.Picture(id, p.Idx))).ToList())
         {
             if (!File.Exists(from) || File.Exists(to)) continue;
             File.Copy(from, to);
@@ -739,9 +748,10 @@ public partial class MainWindow : Window
         if (!ConfirmLeave()) return;
         var c = new Card
         {
-            Id = NextCode(0), Type = CardTypes.Monster | CardTypes.Effect, Ot = Card.RuleCustom,
+            Id = NextCode(0), Source = Card.Orica, Kind = { "シグニ" },
             // The maker is filled in from the last saved card.
-            Desc = CardFooter.Join("", new CardFooter { Maker = settings.LastMaker ?? "" }),
+            Maker = settings.LastMaker ?? "",
+            Prints = { new CardPrint { Idx = 1 } },
         };
         ClearListSelection();
         duplicateSource = 0;
@@ -765,7 +775,14 @@ public partial class MainWindow : Window
         var c = model.ToCard();
         long source = c.Id;
         c.Id = NextCode(c.Id);
-        c.Ot = Card.RuleCustom | (c.Ot & Card.ScopeHidden);
+        // A copy of an official card is an orica: the ja text and the official images stay with the original.
+        if (c.IsOfficial)
+        {
+            c.Source = Card.Orica;
+            if (c.Ko.Name.Length == 0) c.Ko.Name = c.Ja.Name;
+            c.Ja = new CardText();
+            foreach (var p in c.Prints) p.Image = "";
+        }
         // A copy is a new card: it gets its own dates when saved.
         c.Created = c.Modified = "";
         ClearListSelection();
@@ -872,27 +889,45 @@ public partial class MainWindow : Window
     {
         if (e.Key != Key.Up && e.Key != Key.Down || sender is not TextBox tb) return;
         long.TryParse(tb.Text, out long v);
-        v = Math.Clamp(v + (e.Key == Key.Up ? 1 : -1), 0, 255);
+        v = Math.Clamp(v + (e.Key == Key.Up ? 1 : -1), 0, 99);
         tb.Text = v.ToString();
         tb.CaretIndex = tb.Text.Length;
         e.Handled = true;
     }
 
-    void StringBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    /// <summary>A choice picked (or typed + Enter) in a list drop-down is added to its field.</summary>
+    void ListPick_DropDownClosed(object? sender, EventArgs e)
     {
-        // Enter is a line break and Tab goes to the next string; ↑ / ↓ leave a string from its first / last line.
-        var tb = (TextBox)sender;
-        int line = tb.GetLineIndexFromCharacterIndex(tb.CaretIndex);
-        if (e.Key == Key.Down && (line < 0 || line >= tb.LineCount - 1))
-        {
-            ((UIElement)sender).MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Up && line <= 0)
-        {
-            ((UIElement)sender).MoveFocus(new TraversalRequest(FocusNavigationDirection.Previous));
-            e.Handled = true;
-        }
+        if (sender is not ComboBox cb || cb.SelectedItem is not string v) return;
+        model.Append((string)cb.Tag, v);
+        cb.SelectedItem = null;
+        cb.Text = "";
+    }
+
+    void ListPick_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || sender is not ComboBox cb) return;
+        model.Append((string)cb.Tag, cb.Text);
+        cb.SelectedItem = null;
+        cb.Text = "";
+        e.Handled = true;
+    }
+
+    void AddPrint_Click(object sender, RoutedEventArgs e) => model.AddPrint();
+
+    void RemovePrint_Click(object sender, RoutedEventArgs e)
+    {
+        if (model.SelectedPrint != null) model.RemovePrint(model.SelectedPrint);
+    }
+
+    void PrintUp_Click(object sender, RoutedEventArgs e)
+    {
+        if (model.SelectedPrint != null) model.MovePrint(model.SelectedPrint, -1);
+    }
+
+    void PrintDown_Click(object sender, RoutedEventArgs e)
+    {
+        if (model.SelectedPrint != null) model.MovePrint(model.SelectedPrint, 1);
     }
 
     void DescBox_TextChanged(object sender, TextChangedEventArgs e) =>
@@ -993,15 +1028,32 @@ public partial class MainWindow : Window
         string dir = Path.Combine(f.Root, "pics");
         Directory.CreateDirectory(dir);
         long.TryParse(model.Code, out long id);
-        if (id > 0 && File.Exists(f.Picture(id))) Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + f.Picture(id) + "\""));
+        string pic = f.Picture(id, model.PictureIdx);
+        if (id > 0 && File.Exists(pic)) Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + pic + "\""));
         else Process.Start(new ProcessStartInfo("explorer.exe", "\"" + dir + "\""));
     }
 
-    void UpdateImage()
+    int imageRequest;
+
+    /// <summary>Shows pics\&lt;cid&gt;(_idx).png of the chosen print, else the official image from its URL.</summary>
+    async void UpdateImage()
     {
         var f = Files;
         BitmapSource? img = null;
-        if (f != null && long.TryParse(model.Code, out long id) && id > 0) img = ImageTools.Load(f.Picture(id));
+        int request = ++imageRequest;
+        if (f != null && long.TryParse(model.Code, out long id) && id > 0) img = ImageTools.Load(f.Picture(id, model.PictureIdx));
+        string url = model.SelectedPrint?.Image ?? "";
+        if (img == null && url.StartsWith("http", StringComparison.OrdinalIgnoreCase) && testAnswers == null)
+        {
+            ShowImage(null);
+            img = await ImageTools.LoadUrl(url);
+            if (request != imageRequest) return; // another card was chosen meanwhile
+        }
+        ShowImage(img);
+    }
+
+    void ShowImage(BitmapSource? img)
+    {
         CardImage.Source = img;
         NoImageText.Visibility = img == null ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -1042,13 +1094,13 @@ public partial class MainWindow : Window
     }
 
     static readonly string[] ImageExtensions = { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
-    static bool IsCdb(string f) => Path.GetExtension(f).Equals(".cdb", StringComparison.OrdinalIgnoreCase);
+    static bool IsDb(string f) => Path.GetExtension(f).Equals(".db", StringComparison.OrdinalIgnoreCase);
     static bool IsImage(string f) => ImageExtensions.Contains(Path.GetExtension(f).ToLowerInvariant());
 
-    /// <summary>Files dropped anywhere on the window: .cdb files are opened, an image becomes the current card's picture.</summary>
+    /// <summary>Files dropped anywhere on the window: .db files are opened, an image becomes the current card's picture.</summary>
     void Window_PreviewDragOver(object sender, DragEventArgs e)
     {
-        if (e.Data.GetData(DataFormats.FileDrop) is not string[] files || !files.Any(f => IsCdb(f) || IsImage(f))) return;
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] files || !files.Any(f => IsDb(f) || IsImage(f))) return;
         e.Effects = DragDropEffects.Copy;
         e.Handled = true;
     }
@@ -1061,12 +1113,13 @@ public partial class MainWindow : Window
 
     bool DropFiles(string[] files)
     {
-        var cdbs = files.Where(IsCdb).ToList();
-        if (cdbs.Count > 0)
+        var dbFiles = files.Where(IsDb).ToList();
+        if (dbFiles.Count > 0)
         {
-            foreach (var f in cdbs) AddDb(f);
-            RefreshDbList(cdbs[0]);
-            ShowStatus(cdbs.Count == 1 ? $"{Path.GetFileName(cdbs[0])} 열었어요" : $"cdb {cdbs.Count}개를 목록에 넣었어요");
+            var packs = dbFiles.Where(AddDb).ToList();
+            if (packs.Count == 0) return true;
+            RefreshDbList(packs[0]);
+            ShowStatus(packs.Count == 1 ? $"{Path.GetFileName(packs[0])} 열었어요" : $"DB {packs.Count}개를 목록에 넣었어요");
             return true;
         }
         var img = files.FirstOrDefault(IsImage);
@@ -1092,10 +1145,11 @@ public partial class MainWindow : Window
         if (!long.TryParse(model.Code, out long id) || id <= 0) { ShowStatus("카드 코드를 먼저 입력해 주세요."); return; }
         try
         {
-            history.Push(CardOps.ReplaceImage(currentDb.Path, id, (pic, thumb) => ImageTools.WriteCardImage(src, pic, thumb)));
+            var entry = CardOps.ReplaceImage(currentDb.Path, id, model.PictureIdx, pic => ImageTools.SavePng(src, pic));
+            history.Push(entry);
             UpdateUndo();
             UpdateImage();
-            ShowStatus($"이미지를 넣었어요 ({from} → pics\\{id}.jpg, {ImageTools.Width}×{ImageTools.Height})");
+            ShowStatus($"이미지를 넣었어요 ({from} → pics\\{Path.GetFileName(entry.CreatedFiles[^1])}, {src.PixelWidth}×{src.PixelHeight})");
         }
         catch (Exception ex)
         {
@@ -1153,8 +1207,9 @@ public partial class MainWindow : Window
         "Delete\t\t목록에서 선택한 카드 삭제\n" +
         "F5\t\tDB 목록 새로 읽기\n" +
         "Ctrl+휠, Ctrl+= / - / 0\t화면 크기\n\n" +
-        "스트링 칸: Enter 줄바꿈, Tab 다음 칸, 첫·끝 줄에서 ↑ / ↓ 로 칸 이동\n" +
-        "레벨·스케일 칸: ↑ / ↓ 로 1씩 변경\n" +
+        "레벨·리미트·코인 칸: ↑ / ↓ 로 1씩 변경\n" +
+        "클래스·한정 조건·팀: 오른쪽 목록에서 고르면 추가\n" +
+        "이미지는 인쇄본 목록에서 고른 일러에 들어가요\n" +
         "목록 우클릭: 다른 DB로 복사 / 이동",
         "단축키", MessageBoxButton.OK, MessageBoxImage.Information);
 

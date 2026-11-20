@@ -17,7 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="data\cardinfo_korean.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="data\lists.json" CopyToOutputDirectory="PreserveNewest" />
     <Resource Include="app.ico" />
   </ItemGroup>
 
